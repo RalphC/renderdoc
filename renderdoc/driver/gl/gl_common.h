@@ -2239,6 +2239,13 @@ enum class GLChunk : uint32_t
   glMapBufferRangeEXT,
   glFlushMappedBufferRangeEXT,
 
+  // add support for extension
+  glEGLImageTargetTexture2DOES,
+  glEGLImageTargetRenderbufferStorageOES,
+  glEGLImageTargetTexStorageEXT,
+  glEGLImageTargetTextureStorageEXT,
+
+
   Max,
 };
 
