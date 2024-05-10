@@ -268,7 +268,7 @@ struct TypeInfo
   }
 };
 
-EntryPoint::Signature::Signature(const Metadata *signature)
+EntryPointInterface::Signature::Signature(const Metadata *signature)
 {
   /*
   // Extended properties
@@ -287,7 +287,7 @@ EntryPoint::Signature::Signature(const Metadata *signature)
   startCol = getival<int8_t>(signature->children[SignatureElement::StartCol]);
 }
 
-EntryPoint ::ResourceBase::ResourceBase(const Metadata *resourceBase)
+EntryPointInterface::ResourceBase::ResourceBase(const Metadata *resourceBase)
 {
   id = getival<uint32_t>(resourceBase->children[(size_t)ResField::ID]);
   type = resourceBase->children[(size_t)ResField::VarDecl]->type;
@@ -297,7 +297,7 @@ EntryPoint ::ResourceBase::ResourceBase(const Metadata *resourceBase)
   regCount = getival<uint32_t>(resourceBase->children[(size_t)ResField::RegCount]);
 }
 
-EntryPoint::SRV::SRV(const Metadata *srv) : ResourceBase(srv)
+EntryPointInterface::SRV::SRV(const Metadata *srv) : ResourceBase(srv)
 {
   shape = getival<ResourceKind>(srv->children[(size_t)ResField::SRVShape]);
   sampleCount = getival<uint32_t>(srv->children[(size_t)ResField::SRVSampleCount]);
@@ -319,7 +319,7 @@ EntryPoint::SRV::SRV(const Metadata *srv) : ResourceBase(srv)
   }
 }
 
-EntryPoint::UAV::UAV(const Metadata *uav) : ResourceBase(uav)
+EntryPointInterface::UAV::UAV(const Metadata *uav) : ResourceBase(uav)
 {
   shape = getival<ResourceKind>(uav->children[(size_t)ResField::UAVShape]);
   globallCoherent = (getival<uint32_t>(uav->children[(size_t)ResField::UAVGloballyCoherent]) == 1);
@@ -349,7 +349,7 @@ EntryPoint::UAV::UAV(const Metadata *uav) : ResourceBase(uav)
   }
 }
 
-EntryPoint::CBuffer::CBuffer(const Metadata *cbuffer) : ResourceBase(cbuffer)
+EntryPointInterface::CBuffer::CBuffer(const Metadata *cbuffer) : ResourceBase(cbuffer)
 {
   sizeInBytes = getival<uint32_t>(cbuffer->children[(size_t)ResField::CBufferByteSize]);
   const Metadata *tags = cbuffer->children[(size_t)ResField::CBufferTags];
@@ -360,14 +360,15 @@ EntryPoint::CBuffer::CBuffer(const Metadata *cbuffer) : ResourceBase(cbuffer)
     if(tag == ResourcesTag::IsTBufferTag)
       isTBuffer = (getival<uint32_t>(tags->children[t + 1]) == 1);
   }
+  cbufferRefl = NULL;
 }
 
-EntryPoint::Sampler::Sampler(const Metadata *sampler) : ResourceBase(sampler)
+EntryPointInterface::Sampler::Sampler(const Metadata *sampler) : ResourceBase(sampler)
 {
   samplerType = getival<SamplerKind>(sampler->children[(size_t)ResField::SamplerType]);
 }
 
-EntryPoint::EntryPoint(const Metadata *entryPoint)
+EntryPointInterface::EntryPointInterface(const Metadata *entryPoint)
 {
   function = entryPoint->children[0]->type;
   name = entryPoint->children[1]->str;
@@ -457,20 +458,6 @@ EntryPoint::EntryPoint(const Metadata *entryPoint)
   }
 }
 
-struct EntryPointsInfo
-{
-  EntryPointsInfo(const Metadata *entryPoints)
-  {
-    if(!entryPoints)
-      return;
-
-    for(size_t c = 0; c < entryPoints->children.size(); ++c)
-      entryPointsData.emplace_back(entryPoints->children[c]);
-  }
-
-  rdcarray<EntryPoint> entryPointsData;
-};
-
 static DXBC::CBufferVariableType MakePayloadType(const TypeInfo &typeInfo, const Type *t)
 {
   using namespace DXBC;
@@ -557,12 +544,16 @@ static DXBC::CBufferVariableType MakePayloadType(const TypeInfo &typeInfo, const
   return ret;
 }
 
-void Program::FetchEntryPoints(rdcarray<EntryPoint> &entryPoints)
+void Program::FetchEntryPointInterfaces(rdcarray<EntryPointInterface> &entryPointInterfaces)
 {
   DXMeta dx(m_NamedMeta);
 
-  EntryPointsInfo entryPointsInfo(dx.entryPoints);
-  entryPoints = entryPointsInfo.entryPointsData;
+  entryPointInterfaces.clear();
+  if(!dx.entryPoints)
+    return;
+
+  for(size_t c = 0; c < dx.entryPoints->children.size(); ++c)
+    entryPointInterfaces.emplace_back(dx.entryPoints->children[c]);
 }
 
 void Program::FetchComputeProperties(DXBC::Reflection *reflection)
@@ -1427,15 +1418,17 @@ rdcarray<ShaderEntryPoint> Program::GetEntryPoints()
         entryPoint.name = entry->children[1]->str;
 
         Metadata *tags = entry->children[4];
-
-        for(size_t i = 0; i < tags->children.size(); i += 2)
+        if(tags)
         {
-          // 8 is the type tag
-          if(getival<uint32_t>(tags->children[i]) == 8U)
+          for(size_t i = 0; i < tags->children.size(); i += 2)
           {
-            entryPoint.stage =
-                GetShaderStage((DXBC::ShaderType)getival<uint32_t>(tags->children[i + 1]));
-            break;
+            // 8 is the type tag
+            if(getival<uint32_t>(tags->children[i]) == 8U)
+            {
+              entryPoint.stage =
+                  GetShaderStage((DXBC::ShaderType)getival<uint32_t>(tags->children[i + 1]));
+              break;
+            }
           }
         }
 
@@ -1684,6 +1677,11 @@ DXBC::Reflection *Program::GetReflection()
   RDCEraseEl(refl->DispatchThreadsDimension);
 
   return refl;
+}
+
+rdcstr Program::GetDebugStatus()
+{
+  return "Debugging DXIL is not supported";
 }
 
 void Program::GetLineInfo(size_t instruction, uintptr_t offset, LineColumnInfo &lineInfo) const

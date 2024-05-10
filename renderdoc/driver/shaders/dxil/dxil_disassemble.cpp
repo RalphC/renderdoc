@@ -75,13 +75,28 @@ rdcstr escapeStringIfNeeded(const rdcstr &name)
   return needsEscaping(name) ? escapeString(name) : name;
 }
 
-template <typename T>
-T getival(const Value *v)
+bool isUndef(const Value *v)
 {
-  const Constant *c = cast<Constant>(v);
-  if(c && c->isLiteral())
-    return T(c->getU32());
-  return T();
+  if(const Constant *c = cast<Constant>(v))
+    return c->isUndef();
+  return false;
+}
+
+template <typename T>
+bool getival(const Value *v, T &out)
+{
+  if(const Constant *c = cast<Constant>(v))
+  {
+    out = T(c->getU64());
+    return true;
+  }
+  else if(const Literal *lit = cast<Literal>(v))
+  {
+    out = T(c->getU64());
+    return true;
+  }
+  out = T();
+  return false;
 }
 
 static const char *shaderNames[] = {
@@ -91,531 +106,267 @@ static const char *shaderNames[] = {
 };
 
 // clang-format off
-static const char *funcNames[] = {
-"TempRegLoad",
-"TempRegStore",
-"MinPrecXRegLoad",
-"MinPrecXRegStore",
-"LoadInput",
-"StoreOutput",
-"FAbs",
-"Saturate",
-"IsNaN",
-"IsInf",
-"IsFinite",
-"IsNormal",
-"Cos",
-"Sin",
-"Tan",
-"Acos",
-"Asin",
-"Atan",
-"Hcos",
-"Hsin",
-"Htan",
-"Exp",
-"Frc",
-"Log",
-"Sqrt",
-"Rsqrt",
-"Round_ne",
-"Round_ni",
-"Round_pi",
-"Round_z",
-"Bfrev",
-"Countbits",
-"FirstbitLo",
-"FirstbitHi",
-"FirstbitSHi",
-"FMax",
-"FMin",
-"IMax",
-"IMin",
-"UMax",
-"UMin",
-"IMul",
-"UMul",
-"UDiv",
-"UAddc",
-"USubb",
-"FMad",
-"Fma",
-"IMad",
-"UMad",
-"Msad",
-"Ibfe",
-"Ubfe",
-"Bfi",
-"Dot2",
-"Dot3",
-"Dot4",
-"CreateHandle",
-"CBufferLoad",
-"CBufferLoadLegacy",
-"Sample",
-"SampleBias",
-"SampleLevel",
-"SampleGrad",
-"SampleCmp",
-"SampleCmpLevelZero",
-"TextureLoad",
-"TextureStore",
-"BufferLoad",
-"BufferStore",
-"BufferUpdateCounter",
-"CheckAccessFullyMapped",
-"GetDimensions",
-"TextureGather",
-"TextureGatherCmp",
-"Texture2DMSGetSamplePosition",
-"RenderTargetGetSamplePosition",
-"RenderTargetGetSampleCount",
-"AtomicBinOp",
-"AtomicCompareExchange",
-"Barrier",
-"CalculateLOD",
-"Discard",
-"DerivCoarseX",
-"DerivCoarseY",
-"DerivFineX",
-"DerivFineY",
-"EvalSnapped",
-"EvalSampleIndex",
-"EvalCentroid",
-"SampleIndex",
-"Coverage",
-"InnerCoverage",
-"ThreadId",
-"GroupId",
-"ThreadIdInGroup",
-"FlattenedThreadIdInGroup",
-"EmitStream",
-"CutStream",
-"EmitThenCutStream",
-"GSInstanceID",
-"MakeDouble",
-"SplitDouble",
-"LoadOutputControlPoint",
-"LoadPatchConstant",
-"DomainLocation",
-"StorePatchConstant",
-"OutputControlPointID",
-"PrimitiveID",
-"CycleCounterLegacy",
-"WaveIsFirstLane",
-"WaveGetLaneIndex",
-"WaveGetLaneCount",
-"WaveAnyTrue",
-"WaveAllTrue",
-"WaveActiveAllEqual",
-"WaveActiveBallot",
-"WaveReadLaneAt",
-"WaveReadLaneFirst",
-"WaveActiveOp",
-"WaveActiveBit",
-"WavePrefixOp",
-"QuadReadLaneAt",
-"QuadOp",
-"BitcastI16toF16",
-"BitcastF16toI16",
-"BitcastI32toF32",
-"BitcastF32toI32",
-"BitcastI64toF64",
-"BitcastF64toI64",
-"LegacyF32ToF16",
-"LegacyF16ToF32",
-"LegacyDoubleToFloat",
-"LegacyDoubleToSInt32",
-"LegacyDoubleToUInt32",
-"WaveAllBitCount",
-"WavePrefixBitCount",
-"AttributeAtVertex",
-"ViewID",
-"RawBufferLoad",
-"RawBufferStore",
-"InstanceID",
-"InstanceIndex",
-"HitKind",
-"RayFlags",
-"DispatchRaysIndex",
-"DispatchRaysDimensions",
-"WorldRayOrigin",
-"WorldRayDirection",
-"ObjectRayOrigin",
-"ObjectRayDirection",
-"ObjectToWorld",
-"WorldToObject",
-"RayTMin",
-"RayTCurrent",
-"IgnoreHit",
-"AcceptHitAndEndSearch",
-"TraceRay",
-"ReportHit",
-"CallShader",
-"CreateHandleForLib",
-"PrimitiveIndex",
-"Dot2AddHalf",
-"Dot4AddI8Packed",
-"Dot4AddU8Packed",
-"WaveMatch",
-"WaveMultiPrefixOp",
-"WaveMultiPrefixBitCount",
-"SetMeshOutputCounts",
-"EmitIndices",
-"GetMeshPayload",
-"StoreVertexOutput",
-"StorePrimitiveOutput",
-"DispatchMesh",
-"WriteSamplerFeedback",
-"WriteSamplerFeedbackBias",
-"WriteSamplerFeedbackLevel",
-"WriteSamplerFeedbackGrad",
-"AllocateRayQuery",
-"RayQuery_TraceRayInline",
-"RayQuery_Proceed",
-"RayQuery_Abort",
-"RayQuery_CommitNonOpaqueTriangleHit",
-"RayQuery_CommitProceduralPrimitiveHit",
-"RayQuery_CommittedStatus",
-"RayQuery_CandidateType",
-"RayQuery_CandidateObjectToWorld3x4",
-"RayQuery_CandidateWorldToObject3x4",
-"RayQuery_CommittedObjectToWorld3x4",
-"RayQuery_CommittedWorldToObject3x4",
-"RayQuery_CandidateProceduralPrimitiveNonOpaque",
-"RayQuery_CandidateTriangleFrontFace",
-"RayQuery_CommittedTriangleFrontFace",
-"RayQuery_CandidateTriangleBarycentrics",
-"RayQuery_CommittedTriangleBarycentrics",
-"RayQuery_RayFlags",
-"RayQuery_WorldRayOrigin",
-"RayQuery_WorldRayDirection",
-"RayQuery_RayTMin",
-"RayQuery_CandidateTriangleRayT",
-"RayQuery_CommittedRayT",
-"RayQuery_CandidateInstanceIndex",
-"RayQuery_CandidateInstanceID",
-"RayQuery_CandidateGeometryIndex",
-"RayQuery_CandidatePrimitiveIndex",
-"RayQuery_CandidateObjectRayOrigin",
-"RayQuery_CandidateObjectRayDirection",
-"RayQuery_CommittedInstanceIndex",
-"RayQuery_CommittedInstanceID",
-"RayQuery_CommittedGeometryIndex",
-"RayQuery_CommittedPrimitiveIndex",
-"RayQuery_CommittedObjectRayOrigin",
-"RayQuery_CommittedObjectRayDirection",
-"GeometryIndex",
-"RayQuery_CandidateInstanceContributionToHitGroupIndex",
-"RayQuery_CommittedInstanceContributionToHitGroupIndex",
-"AnnotateHandle",
-"CreateHandleFromBinding",
-"CreateHandleFromHeap",
-"Unpack4x8",
-"Pack4x8",
-"IsHelperLane",
-"QuadVote",
-"TextureGatherRaw",
-"SampleCmpLevel",
-"TextureStoreSample",
-"WaveMatrix_Annotate",
-"WaveMatrix_Depth",
-"WaveMatrix_Fill",
-"WaveMatrix_LoadRawBuf",
-"WaveMatrix_LoadGroupShared",
-"WaveMatrix_StoreRawBuf",
-"WaveMatrix_StoreGroupShared",
-"WaveMatrix_Multiply",
-"WaveMatrix_MultiplyAccumulate",
-"WaveMatrix_ScalarOp",
-"WaveMatrix_SumAccumulate",
-"WaveMatrix_Add",
-"AllocateNodeOutputRecords",
-"GetNodeRecordPtr",
-"IncrementOutputCount",
-"OutputComplete",
-"GetInputRecordCount",
-"FinishedCrossGroupSharing",
-"BarrierByMemoryType",
-"BarrierByMemoryHandle",
-"BarrierByNodeRecordHandle",
-"CreateNodeOutputHandle",
-"IndexNodeHandle",
-"AnnotateNodeHandle",
-"CreateNodeInputRecordHandle",
-"AnnotateNodeRecordHandle",
-"NodeOutputIsValid",
-"GetRemainingRecursionLevels",
-"SampleCmpGrad",
-"SampleCmpBias",
-"StartVertexLocation",
-"StartInstanceLocation",
-};
-
-static const char *funcSigs[] = {
-"index",
-"index,value",
-"regIndex,index,component",
-"regIndex,index,component,value",
-"inputSigId,rowIndex,colIndex,gsVertexAxis",
-"outputSigId,rowIndex,colIndex,value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b",
-"a,b,c",
-"a,b,c",
-"a,b,c",
-"a,b,c",
-"a,b,c",
-"a,b,c",
-"a,b,c",
-"width,offset,value,replacedValue",
-"ax,ay,bx,by",
-"ax,ay,az,bx,by,bz",
-"ax,ay,az,aw,bx,by,bz,bw",
-"resourceClass,rangeId,index,nonUniformIndex",
-"handle,byteOffset,alignment",
-"handle,regIndex",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,clamp",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,bias,clamp",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,LOD",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,clamp",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue",
-"srv,mipLevelOrSampleCount,coord0,coord1,coord2,offset0,offset1,offset2",
-"srv,coord0,coord1,coord2,value0,value1,value2,value3,mask",
-"srv,index,wot",
-"uav,coord0,coord1,value0,value1,value2,value3,mask",
-"uav,inc",
-"status",
-"handle,mipLevel",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,channel",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,channel,compareValue",
-"srv,index",
-"index",
-"",
-"handle,atomicOp,offset0,offset1,offset2,newValue",
-"handle,offset0,offset1,offset2,compareValue,newValue",
-"barrierMode",
-"handle,sampler,coord0,coord1,coord2,clamped",
-"condition",
-"value",
-"value",
-"value",
-"value",
-"inputSigId,inputRowIndex,inputColIndex,offsetX,offsetY",
-"inputSigId,inputRowIndex,inputColIndex,sampleIndex",
-"inputSigId,inputRowIndex,inputColIndex",
-"",
-"",
-"",
-"component",
-"component",
-"component",
-"",
-"streamId",
-"streamId",
-"streamId",
-"",
-"lo,hi",
-"value",
-"inputSigId,row,col,index",
-"inputSigId,row,col",
-"component",
-"outputSigID,row,col,value",
-"",
-"",
-"",
-"",
-"",
-"",
-"cond",
-"cond",
-"value",
-"cond",
-"value,lane",
-"value",
-"value,op,sop",
-"value,op",
-"value,op,sop",
-"value,quadLane",
-"value,op",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"value",
-"inputSigId,inputRowIndex,inputColIndex,VertexID",
-"",
-"srv,index,elementOffset,mask,alignment",
-"uav,index,elementOffset,value0,value1,value2,value3,mask,alignment",
-"",
-"",
-"",
-"",
-"col",
-"col",
-"col",
-"col",
-"col",
-"col",
-"row,col",
-"row,col",
-"",
-"",
-"",
-"",
-"AccelerationStructure,RayFlags,InstanceInclusionMask,RayContributionToHitGroupIndex,MultiplierForGeometryContributionToShaderIndex,MissShaderIndex,Origin_X,Origin_Y,Origin_Z,TMin,Direction_X,Direction_Y,Direction_Z,TMax,payload",
-"THit,HitKind,Attributes",
-"ShaderIndex,Parameter",
-"Resource",
-"",
-"acc,ax,ay,bx,by",
-"acc,a,b",
-"acc,a,b",
-"value",
-"value,mask0,mask1,mask2,mask3,op,sop",
-"value,mask0,mask1,mask2,mask3",
-"numVertices,numPrimitives",
-"PrimitiveIndex,VertexIndex0,VertexIndex1,VertexIndex2",
-"",
-"outputSigId,rowIndex,colIndex,value,vertexIndex",
-"outputSigId,rowIndex,colIndex,value,primitiveIndex",
-"threadGroupCountX,threadGroupCountY,threadGroupCountZ,payload",
-"feedbackTex,sampledTex,sampler,c0,c1,c2,c3,clamp",
-"feedbackTex,sampledTex,sampler,c0,c1,c2,c3,bias,clamp",
-"feedbackTex,sampledTex,sampler,c0,c1,c2,c3,lod",
-"feedbackTex,sampledTex,sampler,c0,c1,c2,c3,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp",
-"constRayFlags",
-"rayQueryHandle,accelerationStructure,rayFlags,instanceInclusionMask,origin_X,origin_Y,origin_Z,tMin,direction_X,direction_Y,direction_Z,tMax",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle,t",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle,row,col",
-"rayQueryHandle,row,col",
-"rayQueryHandle,row,col",
-"rayQueryHandle,row,col",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle,component",
-"rayQueryHandle,component",
-"rayQueryHandle",
-"rayQueryHandle,component",
-"rayQueryHandle,component",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle,component",
-"rayQueryHandle,component",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle",
-"rayQueryHandle,component",
-"rayQueryHandle,component",
-"",
-"rayQueryHandle",
-"rayQueryHandle",
-"res,props",
-"bind,index,nonUniformIndex",
-"index,samplerHeap,nonUniformIndex",
-"unpackMode,pk",
-"packMode,x,y,z,w",
-"",
-"cond,op",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,lod",
-"srv,coord0,coord1,coord2,value0,value1,value2,value3,mask,sampleIdx",
-"waveMatrixPtr,waveMatProps",
-"waveMatProps",
-"waveMatrixPtr,value",
-"waveMatrixPtr,rawBuf,offsetInBytes,strideInBytes,alignmentInBytes,colMajor",
-"waveMatrixPtr,groupsharedPtr,startArrayIndex,strideInElements,colMajor",
-"waveMatrixPtr,rawBuf,offsetInBytes,strideInBytes,alignmentInBytes,colMajor",
-"waveMatrixPtr,groupsharedPtr,startArrayIndex,strideInElements,colMajor",
-"waveMatrixAccumulator,waveMatrixLeft,waveMatrixRight",
-"waveMatrixAccumulator,waveMatrixLeft,waveMatrixRight",
-"waveMatrixPtr,op,value",
-"waveMatrixFragment,waveMatrixInput",
-"waveMatrixAccumulator,waveMatrixAccumulatorOrFragment",
-"output,numRecords,perThread",
-"recordhandle,arrayIndex",
-"output,count,perThread",
-"output",
-"input",
-"input",
-"MemoryTypeFlags,SemanticFlags",
-"object,SemanticFlags",
-"object,SemanticFlags",
-"MetadataIdx",
-"NodeOutputHandle,ArrayIndex",
-"node,props",
-"MetadataIdx",
-"noderecord,props",
-"output",
-"",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp",
-"srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,bias,clamp",
-"",
-"",
+static const char *funcNameSigs[] = {
+"TempRegLoad(index)",
+"TempRegStore(index,value)",
+"MinPrecXRegLoad(regIndex,index,component)",
+"MinPrecXRegStore(regIndex,index,component,value)",
+"LoadInput(inputSigId,rowIndex,colIndex,gsVertexAxis)",
+"StoreOutput(outputSigId,rowIndex,colIndex,value)",
+"FAbs()",
+"Saturate()",
+"IsNaN()",
+"IsInf()",
+"IsFinite()",
+"IsNormal()",
+"Cos()",
+"Sin()",
+"Tan()",
+"Acos()",
+"Asin()",
+"Atan()",
+"Hcos()",
+"Hsin()",
+"Htan()",
+"Exp()",
+"Frc()",
+"Log()",
+"Sqrt()",
+"Rsqrt()",
+"Round_ne()",
+"Round_ni()",
+"Round_pi()",
+"Round_z()",
+"Bfrev()",
+"Countbits()",
+"FirstbitLo()",
+"FirstbitHi()",
+"FirstbitSHi()",
+"FMax()",
+"FMin()",
+"IMax()",
+"IMin()",
+"UMax()",
+"UMin()",
+"IMul()",
+"UMul()",
+"UDiv()",
+"UAddc()",
+"USubb()",
+"FMad()",
+"Fma()",
+"IMad()",
+"UMad()",
+"Msad()",
+"Ibfe()",
+"Ubfe()",
+"Bfi(width,offset,value,replacedValue)",
+"Dot2(ax,ay,bx,by)",
+"Dot3(ax,ay,az,bx,by,bz)",
+"Dot4(ax,ay,az,aw,bx,by,bz,bw)",
+"CreateHandle(resourceClass,rangeId,index,nonUniformIndex)",
+"CBufferLoad(handle,byteOffset,alignment)",
+"CBufferLoadLegacy(handle,regIndex)",
+"Sample(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,clamp)",
+"SampleBias(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,bias,clamp)",
+"SampleLevel(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,LOD)",
+"SampleGrad(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp)",
+"SampleCmp(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,clamp)",
+"SampleCmpLevelZero(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue)",
+"TextureLoad(srv,mipLevelOrSampleCount,coord0,coord1,coord2,offset0,offset1,offset2)",
+"TextureStore(srv,coord0,coord1,coord2,value0,value1,value2,value3,mask)",
+"BufferLoad(srv,index,wot)",
+"BufferStore(uav,coord0,coord1,value0,value1,value2,value3,mask)",
+"BufferUpdateCounter(uav,inc)",
+"CheckAccessFullyMapped(status)",
+"GetDimensions(handle,mipLevel)",
+"TextureGather(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,channel)",
+"TextureGatherCmp(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,channel,compareValue)",
+"Texture2DMSGetSamplePosition(srv,index)",
+"RenderTargetGetSamplePosition(index)",
+"RenderTargetGetSampleCount()",
+"AtomicBinOp(handle,atomicOp,offset0,offset1,offset2,newValue)",
+"AtomicCompareExchange(handle,offset0,offset1,offset2,compareValue,newValue)",
+"Barrier(barrierMode)",
+"CalculateLOD(handle,sampler,coord0,coord1,coord2,clamped)",
+"Discard(condition)",
+"DerivCoarseX()",
+"DerivCoarseY()",
+"DerivFineX()",
+"DerivFineY()",
+"EvalSnapped(inputSigId,inputRowIndex,inputColIndex,offsetX,offsetY)",
+"EvalSampleIndex(inputSigId,inputRowIndex,inputColIndex,sampleIndex)",
+"EvalCentroid(inputSigId,inputRowIndex,inputColIndex)",
+"SampleIndex()",
+"Coverage()",
+"InnerCoverage()",
+"ThreadId(component)",
+"GroupId(component)",
+"ThreadIdInGroup(component)",
+"FlattenedThreadIdInGroup()",
+"EmitStream(streamId)",
+"CutStream(streamId)",
+"EmitThenCutStream(streamId)",
+"GSInstanceID()",
+"MakeDouble(lo,hi)",
+"SplitDouble()",
+"LoadOutputControlPoint(inputSigId,row,col,index)",
+"LoadPatchConstant(inputSigId,row,col)",
+"DomainLocation(component)",
+"StorePatchConstant(outputSigID,row,col,value)",
+"OutputControlPointID()",
+"PrimitiveID()",
+"CycleCounterLegacy()",
+"WaveIsFirstLane()",
+"WaveGetLaneIndex()",
+"WaveGetLaneCount()",
+"WaveAnyTrue(cond)",
+"WaveAllTrue(cond)",
+"WaveActiveAllEqual()",
+"WaveActiveBallot(cond)",
+"WaveReadLaneAt(value,lane)",
+"WaveReadLaneFirst()",
+"WaveActiveOp(value,op,sop)",
+"WaveActiveBit(value,op)",
+"WavePrefixOp(value,op,sop)",
+"QuadReadLaneAt(value,quadLane)",
+"QuadOp(value,op)",
+"BitcastI16toF16()",
+"BitcastF16toI16()",
+"BitcastI32toF32()",
+"BitcastF32toI32()",
+"BitcastI64toF64()",
+"BitcastF64toI64()",
+"LegacyF32ToF16()",
+"LegacyF16ToF32()",
+"LegacyDoubleToFloat()",
+"LegacyDoubleToSInt32()",
+"LegacyDoubleToUInt32()",
+"WaveAllBitCount()",
+"WavePrefixBitCount()",
+"AttributeAtVertex(inputSigId,inputRowIndex,inputColIndex,VertexID)",
+"ViewID()",
+"RawBufferLoad(srv,index,elementOffset,mask,alignment)",
+"RawBufferStore(uav,index,elementOffset,value0,value1,value2,value3,mask,alignment)",
+"InstanceID()",
+"InstanceIndex()",
+"HitKind()",
+"RayFlags()",
+"DispatchRaysIndex(col)",
+"DispatchRaysDimensions(col)",
+"WorldRayOrigin(col)",
+"WorldRayDirection(col)",
+"ObjectRayOrigin(col)",
+"ObjectRayDirection(col)",
+"ObjectToWorld(row,col)",
+"WorldToObject(row,col)",
+"RayTMin()",
+"RayTCurrent()",
+"IgnoreHit()",
+"AcceptHitAndEndSearch()",
+"TraceRay(AccelerationStructure,RayFlags,InstanceInclusionMask,RayContributionToHitGroupIndex,MultiplierForGeometryContributionToShaderIndex,MissShaderIndex,Origin_X,Origin_Y,Origin_Z,TMin,Direction_X,Direction_Y,Direction_Z,TMax,payload)",
+"ReportHit(THit,HitKind,Attributes)",
+"CallShader(ShaderIndex,Parameter)",
+"CreateHandleForLib(Resource)",
+"PrimitiveIndex()",
+"Dot2AddHalf(acc,ax,ay,bx,by)",
+"Dot4AddI8Packed(acc,a,b)",
+"Dot4AddU8Packed(acc,a,b)",
+"WaveMatch()",
+"WaveMultiPrefixOp(value,mask0,mask1,mask2,mask3,op,sop)",
+"WaveMultiPrefixBitCount(value,mask0,mask1,mask2,mask3)",
+"SetMeshOutputCounts(numVertices,numPrimitives)",
+"EmitIndices(PrimitiveIndex,VertexIndex0,VertexIndex1,VertexIndex2)",
+"GetMeshPayload()",
+"StoreVertexOutput(outputSigId,rowIndex,colIndex,value,vertexIndex)",
+"StorePrimitiveOutput(outputSigId,rowIndex,colIndex,value,primitiveIndex)",
+"DispatchMesh(threadGroupCountX,threadGroupCountY,threadGroupCountZ,payload)",
+"WriteSamplerFeedback(feedbackTex,sampledTex,sampler,c0,c1,c2,c3,clamp)",
+"WriteSamplerFeedbackBias(feedbackTex,sampledTex,sampler,c0,c1,c2,c3,bias,clamp)",
+"WriteSamplerFeedbackLevel(feedbackTex,sampledTex,sampler,c0,c1,c2,c3,lod)",
+"WriteSamplerFeedbackGrad(feedbackTex,sampledTex,sampler,c0,c1,c2,c3,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp)",
+"AllocateRayQuery(constRayFlags)",
+"RayQuery_TraceRayInline(rayQueryHandle,accelerationStructure,rayFlags,instanceInclusionMask,origin_X,origin_Y,origin_Z,tMin,direction_X,direction_Y,direction_Z,tMax)",
+"RayQuery_Proceed(rayQueryHandle)",
+"RayQuery_Abort(rayQueryHandle)",
+"RayQuery_CommitNonOpaqueTriangleHit(rayQueryHandle)",
+"RayQuery_CommitProceduralPrimitiveHit(rayQueryHandle,t)",
+"RayQuery_CommittedStatus(rayQueryHandle)",
+"RayQuery_CandidateType(rayQueryHandle)",
+"RayQuery_CandidateObjectToWorld3x4(rayQueryHandle,row,col)",
+"RayQuery_CandidateWorldToObject3x4(rayQueryHandle,row,col)",
+"RayQuery_CommittedObjectToWorld3x4(rayQueryHandle,row,col)",
+"RayQuery_CommittedWorldToObject3x4(rayQueryHandle,row,col)",
+"RayQuery_CandidateProceduralPrimitiveNonOpaque(rayQueryHandle)",
+"RayQuery_CandidateTriangleFrontFace(rayQueryHandle)",
+"RayQuery_CommittedTriangleFrontFace(rayQueryHandle)",
+"RayQuery_CandidateTriangleBarycentrics(rayQueryHandle,component)",
+"RayQuery_CommittedTriangleBarycentrics(rayQueryHandle,component)",
+"RayQuery_RayFlags(rayQueryHandle)",
+"RayQuery_WorldRayOrigin(rayQueryHandle,component)",
+"RayQuery_WorldRayDirection(rayQueryHandle,component)",
+"RayQuery_RayTMin(rayQueryHandle)",
+"RayQuery_CandidateTriangleRayT(rayQueryHandle)",
+"RayQuery_CommittedRayT(rayQueryHandle)",
+"RayQuery_CandidateInstanceIndex(rayQueryHandle)",
+"RayQuery_CandidateInstanceID(rayQueryHandle)",
+"RayQuery_CandidateGeometryIndex(rayQueryHandle)",
+"RayQuery_CandidatePrimitiveIndex(rayQueryHandle)",
+"RayQuery_CandidateObjectRayOrigin(rayQueryHandle,component)",
+"RayQuery_CandidateObjectRayDirection(rayQueryHandle,component)",
+"RayQuery_CommittedInstanceIndex(rayQueryHandle)",
+"RayQuery_CommittedInstanceID(rayQueryHandle)",
+"RayQuery_CommittedGeometryIndex(rayQueryHandle)",
+"RayQuery_CommittedPrimitiveIndex(rayQueryHandle)",
+"RayQuery_CommittedObjectRayOrigin(rayQueryHandle,component)",
+"RayQuery_CommittedObjectRayDirection(rayQueryHandle,component)",
+"GeometryIndex()",
+"RayQuery_CandidateInstanceContributionToHitGroupIndex(rayQueryHandle)",
+"RayQuery_CommittedInstanceContributionToHitGroupIndex(rayQueryHandle)",
+"AnnotateHandle(res,props)",
+"CreateHandleFromBinding(bind,index,nonUniformIndex)",
+"CreateHandleFromHeap(index,samplerHeap,nonUniformIndex)",
+"Unpack4x8(unpackMode,pk)",
+"Pack4x8(packMode,x,y,z,w)",
+"IsHelperLane()",
+"QuadVote(cond,op)",
+"TextureGatherRaw(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1)",
+"SampleCmpLevel(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,lod)",
+"TextureStoreSample(srv,coord0,coord1,coord2,value0,value1,value2,value3,mask,sampleIdx)",
+"WaveMatrix_Annotate(waveMatrixPtr,waveMatProps)",
+"WaveMatrix_Depth(waveMatProps)",
+"WaveMatrix_Fill(waveMatrixPtr,value)",
+"WaveMatrix_LoadRawBuf(waveMatrixPtr,rawBuf,offsetInBytes,strideInBytes,alignmentInBytes,colMajor)",
+"WaveMatrix_LoadGroupShared(waveMatrixPtr,groupsharedPtr,startArrayIndex,strideInElements,colMajor)",
+"WaveMatrix_StoreRawBuf(waveMatrixPtr,rawBuf,offsetInBytes,strideInBytes,alignmentInBytes,colMajor)",
+"WaveMatrix_StoreGroupShared(waveMatrixPtr,groupsharedPtr,startArrayIndex,strideInElements,colMajor)",
+"WaveMatrix_Multiply(waveMatrixAccumulator,waveMatrixLeft,waveMatrixRight)",
+"WaveMatrix_MultiplyAccumulate(waveMatrixAccumulator,waveMatrixLeft,waveMatrixRight)",
+"WaveMatrix_ScalarOp(waveMatrixPtr,op,value)",
+"WaveMatrix_SumAccumulate(waveMatrixFragment,waveMatrixInput)",
+"WaveMatrix_Add(waveMatrixAccumulator,waveMatrixAccumulatorOrFragment)",
+"AllocateNodeOutputRecords(output,numRecords,perThread)",
+"GetNodeRecordPtr(recordhandle,arrayIndex)",
+"IncrementOutputCount(output,count,perThread)",
+"OutputComplete(output)",
+"GetInputRecordCount(input)",
+"FinishedCrossGroupSharing(input)",
+"BarrierByMemoryType(MemoryTypeFlags,SemanticFlags)",
+"BarrierByMemoryHandle(object,SemanticFlags)",
+"BarrierByNodeRecordHandle(object,SemanticFlags)",
+"CreateNodeOutputHandle(MetadataIdx)",
+"IndexNodeHandle(NodeOutputHandle,ArrayIndex)",
+"AnnotateNodeHandle(node,props)",
+"CreateNodeInputRecordHandle(MetadataIdx)",
+"AnnotateNodeRecordHandle(noderecord,props)",
+"NodeOutputIsValid(output)",
+"GetRemainingRecursionLevels()",
+"SampleCmpGrad(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp)",
+"SampleCmpBias(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,bias,clamp)",
+"StartVertexLocation()",
+"StartInstanceLocation()",
 };
 // clang-format on
-
-RDCCOMPILE_ASSERT(ARRAY_COUNT(funcNames) == ARRAY_COUNT(funcSigs),
-                  "funcNames not same size as funcSigs");
 
 static rdcstr GetResourceShapeName(DXIL::ResourceKind shape, bool uav)
 {
@@ -1948,13 +1699,10 @@ void Program::MakeDXCDisassemblyString()
           if(Constant *op = cast<Constant>(inst.args[0]))
           {
             uint32_t opcode = op->getU32();
-            if(opcode < ARRAY_COUNT(funcNames))
+            if(opcode < ARRAY_COUNT(funcNameSigs))
             {
               m_Disassembly += "  ; ";
-              m_Disassembly += funcNames[opcode];
-              m_Disassembly += "(";
-              m_Disassembly += funcSigs[opcode];
-              m_Disassembly += ")";
+              m_Disassembly += funcNameSigs[opcode];
             }
           }
         }
@@ -2176,6 +1924,108 @@ void Program::MakeDXCDisassemblyString()
     m_Disassembly += "\n";
 }
 
+static const DXBC::CBufferVariable *FindCBufferVar(const uint32_t minOffset, const uint32_t maxOffset,
+                                                   const rdcarray<DXBC::CBufferVariable> &variables,
+                                                   uint32_t &byteOffset, rdcstr &prefix)
+{
+  for(const DXBC::CBufferVariable &v : variables)
+  {
+    // absolute byte offset of this variable in the cbuffer
+    const uint32_t voffs = byteOffset + v.offset;
+
+    // does minOffset-maxOffset reside in this variable? We don't handle the case where the range
+    // crosses a variable (and I don't think FXC emits that anyway).
+    if(voffs <= minOffset && voffs + v.type.bytesize > maxOffset)
+    {
+      byteOffset = voffs;
+
+      // if it is a struct with members, recurse to find a closer match
+      if(!v.type.members.empty())
+      {
+        prefix += v.name + ".";
+        return FindCBufferVar(minOffset, maxOffset, v.type.members, byteOffset, prefix);
+      }
+
+      // otherwise return this variable.
+      return &v;
+    }
+  }
+
+  return NULL;
+}
+
+static rdcstr MakeCBufferRegisterStr(uint32_t reg, DXIL::EntryPointInterface::CBuffer cbuffer)
+{
+  rdcstr ret = "{";
+  uint32_t offset = 0;
+  uint32_t regOffset = reg * 16;
+  while(offset < 16)
+  {
+    if(offset > 0)
+      ret += ", ";
+
+    uint32_t baseOffset = 0;
+    uint32_t minOffset = regOffset + offset;
+    uint32_t maxOffset = minOffset + 1;
+    rdcstr prefix;
+    const DXBC::CBufferVariable *var =
+        FindCBufferVar(minOffset, maxOffset, cbuffer.cbufferRefl->variables, baseOffset, prefix);
+    if(var)
+    {
+      ret += cbuffer.name + "." + prefix + var->name;
+      uint32_t varOffset = regOffset - baseOffset;
+
+      // if it's an array, add the index based on the relative index to the base offset
+      if(var->type.elements > 1)
+      {
+        uint32_t byteSize = var->type.bytesize;
+
+        // round up the byte size to a the nearest vec4 in case it's not quite a multiple
+        byteSize = AlignUp16(byteSize);
+
+        const uint32_t elementSize = byteSize / var->type.elements;
+        const uint32_t elementIndex = varOffset / elementSize;
+
+        ret += StringFormat::Fmt("[%u]", elementIndex);
+
+        // subtract off so that if there's any further offset, it can be processed
+        varOffset -= elementIndex;
+      }
+
+      // or if it's a matrix
+      if((var->type.varClass == DXBC::CLASS_MATRIX_ROWS && var->type.cols > 1) ||
+         (var->type.varClass == DXBC::CLASS_MATRIX_COLUMNS && var->type.rows > 1))
+      {
+        ret += StringFormat::Fmt("[%u]", varOffset / 16);
+      }
+
+      offset = var->offset + var->type.bytesize;
+      offset -= regOffset;
+    }
+    else
+    {
+      ret += "<padding>";
+      offset += 4;
+    }
+  }
+  ret += "}";
+  return ret;
+}
+
+struct ResourceHandle
+{
+  rdcstr name;
+  ResourceClass resourceClass;
+  uint32_t resourceIndex = 0;
+  union
+  {
+    const DXIL::EntryPointInterface::UAV *uav;
+    const DXIL::EntryPointInterface::SRV *srv;
+    const DXIL::EntryPointInterface::CBuffer *cbuffer;
+    const DXIL::EntryPointInterface::Sampler *sampler;
+  };
+};
+
 void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
 {
   DXIL::dxcStyleFormatting = false;
@@ -2192,186 +2042,11 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
   m_Disassembly += DisassembleTypes(m_DisassemblyInstructionLine);
   m_Disassembly += DisassembleGlobalVars(m_DisassemblyInstructionLine);
 
-  // Decode entry points
-  rdcarray<EntryPoint> entryPoints;
-  FetchEntryPoints(entryPoints);
-  for(size_t e = 0; e < entryPoints.size(); ++e)
-  {
-    EntryPoint &entryPoint = entryPoints[e];
-    m_Disassembly += entryPoint.name + "()";
-    DisassemblyAddNewLine();
-    m_Disassembly += "{";
-    DisassemblyAddNewLine();
-
-    for(size_t i = 0; i < entryPoint.inputs.size(); ++i)
-    {
-      EntryPoint::Signature &sig = entryPoint.inputs[i];
-      VarType varType = VarTypeForComponentType(sig.type);
-      m_Disassembly += "  Input[" + ToStr(i) + "] " + ToStr(varType).c_str();
-
-      if(sig.rows > 1)
-        m_Disassembly += ToStr(sig.rows) + "x";
-      if(sig.cols > 1)
-        m_Disassembly += ToStr(sig.cols);
-
-      m_Disassembly += " " + sig.name + ";";
-      DisassemblyAddNewLine();
-    }
-    if(!entryPoint.outputs.empty())
-      DisassemblyAddNewLine();
-
-    for(size_t i = 0; i < entryPoint.outputs.size(); ++i)
-    {
-      EntryPoint::Signature &sig = entryPoint.outputs[i];
-      VarType varType = VarTypeForComponentType(sig.type);
-      m_Disassembly += "  Output[" + ToStr(i) + "] " + ToStr(varType).c_str();
-
-      if(sig.rows > 1)
-        m_Disassembly += ToStr(sig.rows) + "x";
-      if(sig.cols > 1)
-        m_Disassembly += ToStr(sig.cols);
-
-      m_Disassembly += " " + sig.name + ";";
-      DisassemblyAddNewLine();
-    }
-
-    if(!entryPoint.srvs.empty())
-      DisassemblyAddNewLine();
-
-    for(size_t i = 0; i < entryPoint.srvs.size(); ++i)
-    {
-      EntryPoint::SRV &srv = entryPoint.srvs[i];
-      if(srv.name.empty() && reflection)
-      {
-        for(DXBC::ShaderInputBind bind : reflection->SRVs)
-        {
-          if((bind.space == srv.space) && (bind.reg == srv.regBase) &&
-             (bind.bindCount == srv.regCount))
-            srv.name = bind.name;
-        }
-      }
-      // SRV[0] StructureBuffer<int> fastCopySource Space : 0 Reg : 0 Count : 1;
-      m_Disassembly += "  SRV[" + ToStr(i) + "]";
-      m_Disassembly += " " + GetResourceShapeName(srv.shape, false);
-      m_Disassembly += "<" + GetResourceTypeName(srv.type) + ">";
-      m_Disassembly += " " + srv.name;
-      m_Disassembly += " Space: " + ToStr(srv.space);
-      m_Disassembly += " Reg: " + ToStr(srv.regBase);
-      m_Disassembly += " Count: " + ToStr(srv.regCount);
-      m_Disassembly += ";";
-      DisassemblyAddNewLine();
-    }
-
-    if(!entryPoint.uavs.empty())
-      DisassemblyAddNewLine();
-
-    for(size_t i = 0; i < entryPoint.uavs.size(); ++i)
-    {
-      EntryPoint::UAV &uav = entryPoint.uavs[i];
-      if(uav.name.empty() && reflection)
-      {
-        for(DXBC::ShaderInputBind bind : reflection->UAVs)
-        {
-          if((bind.space == uav.space) && (bind.reg == uav.regBase) &&
-             (bind.bindCount == uav.regCount))
-            uav.name = bind.name;
-        }
-      }
-      m_Disassembly += "  UAV[" + ToStr(i) + "]";
-      m_Disassembly += " " + GetResourceShapeName(uav.shape, true);
-      m_Disassembly += "<" + GetResourceTypeName(uav.type) + ">";
-      m_Disassembly += " " + uav.name;
-      m_Disassembly += " Space: " + ToStr(uav.space);
-      m_Disassembly += " Reg: " + ToStr(uav.regBase);
-      m_Disassembly += " Count: " + ToStr(uav.regCount);
-      m_Disassembly += ";";
-      DisassemblyAddNewLine();
-    }
-
-    if(!entryPoint.cbuffers.empty())
-      DisassemblyAddNewLine();
-
-    for(size_t i = 0; i < entryPoint.cbuffers.size(); ++i)
-    {
-      EntryPoint::CBuffer &cbuffer = entryPoint.cbuffers[i];
-      const DXBC::CBuffer *cbufferRefl = NULL;
-      if(reflection)
-      {
-        for(size_t cbIdx = 0; cbIdx < reflection->CBuffers.size(); ++cbIdx)
-        {
-          const DXBC::CBuffer &cb = reflection->CBuffers[cbIdx];
-          if((cb.space == cbuffer.space) && (cb.reg == cbuffer.regBase) &&
-             (cb.bindCount == cbuffer.regCount))
-          {
-            if(cbuffer.name.empty())
-              cbuffer.name = cb.name;
-            cbufferRefl = &reflection->CBuffers[cbIdx];
-          }
-        }
-      }
-      m_Disassembly += "  CBuffer[" + ToStr(i) + "] ";
-      m_Disassembly += cbuffer.name;
-      m_Disassembly += " Space: " + ToStr(cbuffer.space);
-      m_Disassembly += " Reg: " + ToStr(cbuffer.regBase);
-      m_Disassembly += " Count: " + ToStr(cbuffer.regCount);
-      if(cbufferRefl)
-      {
-        if(!cbufferRefl->variables.empty())
-        {
-          DisassemblyAddNewLine();
-          m_Disassembly += "  {";
-          DisassemblyAddNewLine();
-          for(size_t m = 0; m < cbufferRefl->variables.size(); ++m)
-          {
-            const DXBC::CBufferVariableType &cbType = cbufferRefl->variables[m].type;
-            m_Disassembly += "    ";
-            m_Disassembly += cbType.name;
-            if(cbType.elements > 1)
-              m_Disassembly += "[" + ToStr(cbType.elements) + "]";
-            m_Disassembly += " " + cbufferRefl->variables[m].name;
-            m_Disassembly += ";";
-            DisassemblyAddNewLine();
-          }
-          m_Disassembly += "  }";
-        }
-      }
-      m_Disassembly += ";";
-      DisassemblyAddNewLine();
-    }
-
-    if(!entryPoint.samplers.empty())
-      DisassemblyAddNewLine();
-
-    for(size_t i = 0; i < entryPoint.samplers.size(); ++i)
-    {
-      EntryPoint::Sampler &sampler = entryPoint.samplers[i];
-      if(sampler.name.empty() && reflection)
-      {
-        for(DXBC::ShaderInputBind s : reflection->Samplers)
-        {
-          if((s.space == sampler.space) && (s.reg == sampler.regBase) &&
-             (s.bindCount == sampler.regCount))
-            sampler.name = s.name;
-        }
-      }
-      m_Disassembly += "  Sampler[" + ToStr(i) + "]";
-      m_Disassembly += " " + GetResourceTypeName(sampler.type);
-      m_Disassembly += " " + sampler.name;
-      m_Disassembly += " Space: " + ToStr(sampler.space);
-      m_Disassembly += " Reg: " + ToStr(sampler.regBase);
-      m_Disassembly += " Count: " + ToStr(sampler.regCount);
-      m_Disassembly += ";";
-      DisassemblyAddNewLine();
-    }
-    m_Disassembly += "}";
-    DisassemblyAddNewLine();
-  }
-
   const char *swizzle = "xyzw";
 
-  DisassemblyAddNewLine();
+  rdcarray<EntryPointInterface> entryPoints;
+  FetchEntryPointInterfaces(entryPoints);
 
-  EntryPoint &entryPoint = entryPoints[0];
   for(size_t i = 0; i < m_Functions.size(); i++)
   {
     const Function &func = *m_Functions[i];
@@ -2381,34 +2056,279 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
     if(func.external)
       continue;
 
-    for(EntryPoint &ep : entryPoints)
-    {
-      if(func.name == ep.name)
-      {
-        entryPoint = ep;
-        break;
-      }
-    }
-    if(func.internalLinkage)
-      m_Disassembly += "internal ";
-    m_Disassembly +=
-        func.type->declFunction("@" + escapeStringIfNeeded(func.name), func.args, func.attrs);
-
-    if(func.comdatIdx < m_Comdats.size())
-      m_Disassembly += StringFormat::Fmt(
-          " comdat($%s)", escapeStringIfNeeded(m_Comdats[func.comdatIdx].second).c_str());
-
-    if(func.align)
-      m_Disassembly += StringFormat::Fmt(" align %u", (1U << func.align) >> 1);
-
-    if(func.attrs && func.attrs->functionSlot)
-      m_Disassembly += StringFormat::Fmt(" #%u", m_FuncAttrGroups.indexOf(func.attrs->functionSlot));
-
     if(!func.external)
     {
+      EntryPointInterface *entryPoint = NULL;
+      for(size_t e = 0; e < entryPoints.size(); ++e)
+      {
+        if(func.name == entryPoints[e].name)
+        {
+          entryPoint = &entryPoints[e];
+          break;
+        }
+      }
+
+      // Display inputs/outputs and resource
+      if(entryPoint)
+      {
+        bool needBlankLine = false;
+
+        if(!entryPoint->inputs.empty())
+        {
+          m_Disassembly += "Inputs";
+          DisassemblyAddNewLine();
+          for(size_t j = 0; j < entryPoint->inputs.size(); ++j)
+          {
+            if(needBlankLine)
+              DisassemblyAddNewLine();
+            EntryPointInterface::Signature &sig = entryPoint->inputs[j];
+            VarType varType = VarTypeForComponentType(sig.type);
+            m_Disassembly += "  ";
+            m_Disassembly += ToStr(varType).c_str();
+
+            if(sig.cols > 1)
+              m_Disassembly += ToStr(sig.cols);
+
+            if(reflection && sig.rows == 1)
+            {
+              const SigParameter &sigParam = reflection->InputSig[j];
+              if(sigParam.semanticName == sig.name)
+              {
+                sig.name = sigParam.semanticIdxName;
+              }
+            }
+            m_Disassembly += " " + sig.name;
+            if(sig.rows > 1)
+              m_Disassembly += "[" + ToStr(sig.rows) + "]";
+            m_Disassembly += ";";
+            needBlankLine = true;
+          }
+          DisassemblyAddNewLine();
+        }
+
+        if(!entryPoint->outputs.empty())
+        {
+          if(needBlankLine)
+          {
+            DisassemblyAddNewLine();
+            needBlankLine = false;
+          }
+
+          m_Disassembly += "Outputs";
+          DisassemblyAddNewLine();
+          for(size_t j = 0; j < entryPoint->outputs.size(); ++j)
+          {
+            if(needBlankLine)
+              DisassemblyAddNewLine();
+            EntryPointInterface::Signature &sig = entryPoint->outputs[j];
+            VarType varType = VarTypeForComponentType(sig.type);
+            m_Disassembly += "  ";
+            m_Disassembly += ToStr(varType).c_str();
+
+            if(sig.cols > 1)
+              m_Disassembly += ToStr(sig.cols);
+
+            if(reflection && sig.rows == 1)
+            {
+              const SigParameter &sigParam = reflection->OutputSig[j];
+              if(sigParam.semanticName == sig.name)
+                sig.name = sigParam.semanticIdxName;
+            }
+            m_Disassembly += " " + sig.name;
+            if(sig.rows > 1)
+              m_Disassembly += "[" + ToStr(sig.rows) + "]";
+            m_Disassembly += ";";
+            needBlankLine = true;
+          }
+          DisassemblyAddNewLine();
+        }
+
+        if(!entryPoint->srvs.empty())
+        {
+          for(size_t j = 0; j < entryPoint->srvs.size(); ++j)
+          {
+            if(needBlankLine)
+              DisassemblyAddNewLine();
+            EntryPointInterface::SRV &srv = entryPoint->srvs[j];
+            if(srv.name.empty() && reflection)
+            {
+              for(DXBC::ShaderInputBind bind : reflection->SRVs)
+              {
+                if((bind.space == srv.space) && (bind.reg == srv.regBase) &&
+                   (bind.bindCount == srv.regCount))
+                  srv.name = bind.name;
+              }
+            }
+            m_Disassembly += GetResourceShapeName(srv.shape, false);
+            m_Disassembly += "<" + GetResourceTypeName(srv.type) + ">";
+            m_Disassembly += " " + srv.name;
+            if(srv.regCount > 1)
+            {
+              m_Disassembly += "[";
+              if(srv.regCount != ~0U)
+                m_Disassembly += ToStr(srv.regCount);
+              m_Disassembly += "]";
+            }
+            m_Disassembly +=
+                " : register(t" + ToStr(srv.regBase) + ", space" + ToStr(srv.space) + ")";
+            m_Disassembly += ";";
+            needBlankLine = true;
+          }
+          DisassemblyAddNewLine();
+        }
+
+        if(!entryPoint->uavs.empty())
+        {
+          for(size_t j = 0; j < entryPoint->uavs.size(); ++j)
+          {
+            if(needBlankLine)
+              DisassemblyAddNewLine();
+            EntryPointInterface::UAV &uav = entryPoint->uavs[j];
+            if(uav.name.empty() && reflection)
+            {
+              for(DXBC::ShaderInputBind bind : reflection->UAVs)
+              {
+                if((bind.space == uav.space) && (bind.reg == uav.regBase) &&
+                   (bind.bindCount == uav.regCount))
+                  uav.name = bind.name;
+              }
+            }
+            m_Disassembly += GetResourceShapeName(uav.shape, true);
+            m_Disassembly += "<" + GetResourceTypeName(uav.type) + ">";
+            m_Disassembly += " " + uav.name;
+            if(uav.regCount > 1)
+            {
+              m_Disassembly += "[";
+              if(uav.regCount != ~0U)
+                m_Disassembly += ToStr(uav.regCount);
+              m_Disassembly += "]";
+            }
+            m_Disassembly +=
+                " : register(u" + ToStr(uav.regBase) + ", space" + ToStr(uav.space) + ")";
+            m_Disassembly += ";";
+            needBlankLine = true;
+          }
+          DisassemblyAddNewLine();
+        }
+
+        if(!entryPoint->cbuffers.empty())
+        {
+          for(size_t j = 0; j < entryPoint->cbuffers.size(); ++j)
+          {
+            if(needBlankLine)
+              DisassemblyAddNewLine();
+            EntryPointInterface::CBuffer &cbuffer = entryPoint->cbuffers[j];
+            if(reflection)
+            {
+              for(size_t cbIdx = 0; cbIdx < reflection->CBuffers.size(); ++cbIdx)
+              {
+                const DXBC::CBuffer &cb = reflection->CBuffers[cbIdx];
+                if((cb.space == cbuffer.space) && (cb.reg == cbuffer.regBase) &&
+                   (cb.bindCount == cbuffer.regCount))
+                {
+                  if(cbuffer.name.empty())
+                    cbuffer.name = cb.name;
+                  if(!cbuffer.cbufferRefl)
+                    cbuffer.cbufferRefl = &reflection->CBuffers[cbIdx];
+                }
+              }
+            }
+            m_Disassembly += "cbuffer " + cbuffer.name;
+            if(cbuffer.regCount > 1)
+            {
+              m_Disassembly += "[";
+              if(cbuffer.regCount != ~0U)
+                m_Disassembly += ToStr(cbuffer.regCount);
+              m_Disassembly += "]";
+            }
+            m_Disassembly +=
+                " : register(b" + ToStr(cbuffer.regBase) + ", space" + ToStr(cbuffer.space) + ")";
+            if(cbuffer.cbufferRefl)
+            {
+              if(!cbuffer.cbufferRefl->variables.empty())
+              {
+                DisassemblyAddNewLine();
+                m_Disassembly += "{";
+                DisassemblyAddNewLine();
+
+                for(const DXBC::CBufferVariable &cbVar : cbuffer.cbufferRefl->variables)
+                {
+                  const DXBC::CBufferVariableType &cbType = cbVar.type;
+                  m_Disassembly += "  ";
+                  m_Disassembly += cbType.name;
+                  m_Disassembly += " " + cbVar.name;
+                  if(cbType.elements > 1)
+                    m_Disassembly += "[" + ToStr(cbType.elements) + "]";
+                  m_Disassembly += ";";
+                  DisassemblyAddNewLine();
+                }
+                m_Disassembly += "};";
+                DisassemblyAddNewLine();
+              }
+            }
+            needBlankLine = true;
+          }
+        }
+
+        if(!entryPoint->samplers.empty())
+        {
+          for(size_t j = 0; j < entryPoint->samplers.size(); ++j)
+          {
+            if(needBlankLine)
+              DisassemblyAddNewLine();
+            EntryPointInterface::Sampler &sampler = entryPoint->samplers[j];
+            if(sampler.name.empty() && reflection)
+            {
+              for(DXBC::ShaderInputBind s : reflection->Samplers)
+              {
+                if((s.space == sampler.space) && (s.reg == sampler.regBase) &&
+                   (s.bindCount == sampler.regCount))
+                  sampler.name = s.name;
+              }
+            }
+            m_Disassembly += GetResourceTypeName(sampler.type);
+            m_Disassembly += " " + sampler.name;
+            if(sampler.regCount > 1)
+            {
+              m_Disassembly += "[";
+              if(sampler.regCount != ~0U)
+                m_Disassembly += ToStr(sampler.regCount);
+              m_Disassembly += "]";
+            }
+            m_Disassembly +=
+                " : register(s" + ToStr(sampler.regBase) + ", space" + ToStr(sampler.space) + ")";
+            m_Disassembly += ";";
+            needBlankLine = true;
+          }
+          DisassemblyAddNewLine();
+        }
+
+        if(needBlankLine)
+          DisassemblyAddNewLine();
+      }
+
+      if(func.internalLinkage)
+        m_Disassembly += "internal ";
+      m_Disassembly +=
+          func.type->declFunction("@" + escapeStringIfNeeded(func.name), func.args, func.attrs);
+
+      if(func.comdatIdx < m_Comdats.size())
+        m_Disassembly += StringFormat::Fmt(
+            " comdat($%s)", escapeStringIfNeeded(m_Comdats[func.comdatIdx].second).c_str());
+
+      if(func.align)
+        m_Disassembly += StringFormat::Fmt(" align %u", (1U << func.align) >> 1);
+
+      if(func.attrs && func.attrs->functionSlot)
+        m_Disassembly +=
+            StringFormat::Fmt(" #%u", m_FuncAttrGroups.indexOf(func.attrs->functionSlot));
+
       DisassemblyAddNewLine();
       m_Disassembly += "{";
       DisassemblyAddNewLine();
+
+      std::map<rdcstr, ResourceHandle> resHandles;
+      std::map<rdcstr, rdcstr> ssaAliases;
 
       size_t curBlock = 0;
 
@@ -2431,11 +2351,15 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
           lineStr += inst.type->toString();
           lineStr += " ";
         }
+        rdcstr resultIdStr;
         if(!inst.getName().empty())
-          lineStr += StringFormat::Fmt("%c%s = ", DXIL::dxilIdentifier,
-                                       escapeStringIfNeeded(inst.getName()).c_str());
+          resultIdStr = StringFormat::Fmt("%c%s", DXIL::dxilIdentifier,
+                                          escapeStringIfNeeded(inst.getName()).c_str());
         else if(inst.slot != ~0U)
-          lineStr += StringFormat::Fmt("%c%u = ", DXIL::dxilIdentifier, inst.slot);
+          resultIdStr = StringFormat::Fmt("%c%s", DXIL::dxilIdentifier, ToStr(inst.slot).c_str());
+
+        if(!resultIdStr.empty())
+          lineStr += resultIdStr + " = ";
 
         bool showDxFuncName = false;
         rdcstr commentStr;
@@ -2449,32 +2373,657 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             showDxFuncName = funcCallName.beginsWith("dx.op");
             if(showDxFuncName && funcCallName.beginsWith("dx.op.loadInput"))
             {
+              // LoadInput(inputSigId,rowIndex,colIndex,gsVertexAxis)
               showDxFuncName = false;
-              uint32_t dxopCode = getival<uint32_t>(inst.args[0]);
-              RDCASSERTEQUAL(dxopCode, 4);
-              uint32_t inputIdx = getival<uint32_t>(inst.args[1]);
-              lineStr += entryPoint.inputs[inputIdx].name;
-              uint32_t colIdx = getival<uint32_t>(inst.args[2]);
-              if(entryPoint.inputs[inputIdx].rows > 1)
-                lineStr += "[" + ToStr(colIdx) + "]";
-              lineStr += ".";
-              uint32_t componentIdx = getival<uint32_t>(inst.args[3]);
-              lineStr += swizzle[componentIdx & 0x3];
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::loadInput);
+              rdcstr name;
+              rdcstr rowStr;
+              rdcstr componentStr;
+              uint32_t inputIdx;
+              uint32_t rowIdx;
+              bool hasRowIdx = getival<uint32_t>(inst.args[2], rowIdx);
+              if(getival<uint32_t>(inst.args[1], inputIdx))
+              {
+                EntryPointInterface::Signature &sig = entryPoint->inputs[inputIdx];
+                name = sig.name;
+                if(hasRowIdx)
+                {
+                  if(sig.rows > 1)
+                    rowStr = "[" + ToStr(rowIdx) + "]";
+                }
+              }
+              else
+              {
+                name = ArgToString(inst.args[1], false);
+                rowStr = "[";
+                if(hasRowIdx)
+                  rowStr += ToStr(rowIdx);
+                else
+                  rowStr += ArgToString(inst.args[2], false);
+                rowStr += +"]";
+              }
+              uint32_t componentIdx;
+              if(getival<uint32_t>(inst.args[3], componentIdx))
+                componentStr = StringFormat::Fmt("%c", swizzle[componentIdx & 0x3]);
+              else
+                componentStr = ArgToString(inst.args[3], false);
+
+              lineStr += "<IN>." + name + rowStr + "." + componentStr;
             }
             else if(showDxFuncName && funcCallName.beginsWith("dx.op.storeOutput"))
             {
+              // StoreOutput(outputSigId,rowIndex,colIndex,value)
               showDxFuncName = false;
-              uint32_t dxopCode = getival<uint32_t>(inst.args[0]);
-              RDCASSERTEQUAL(dxopCode, 5);
-              uint32_t outputIdx = getival<uint32_t>(inst.args[1]);
-              lineStr += entryPoint.outputs[outputIdx].name;
-              lineStr += ".";
-              uint32_t colIdx = getival<uint32_t>(inst.args[2]);
-              if(entryPoint.outputs[outputIdx].rows > 1)
-                lineStr += "[" + ToStr(colIdx) + "]";
-              uint32_t componentIdx = getival<uint32_t>(inst.args[3]);
-              lineStr += swizzle[componentIdx & 0x3];
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::storeInput);
+              rdcstr name;
+              rdcstr rowStr;
+              rdcstr componentStr;
+              uint32_t outputIdx;
+              uint32_t rowIdx;
+              bool hasRowIdx = getival<uint32_t>(inst.args[2], rowIdx);
+              if(getival<uint32_t>(inst.args[1], outputIdx))
+              {
+                EntryPointInterface::Signature &sig = entryPoint->outputs[outputIdx];
+                name = sig.name;
+                if(hasRowIdx)
+                {
+                  if(sig.rows > 1)
+                    rowStr = "[" + ToStr(rowIdx) + "]";
+                }
+              }
+              else
+              {
+                name = ArgToString(inst.args[1], false);
+                rowStr = "[";
+                if(hasRowIdx)
+                  rowStr += ToStr(rowIdx);
+                else
+                  rowStr += ArgToString(inst.args[2], false);
+                rowStr += +"]";
+              }
+              uint32_t componentIdx;
+              if(getival<uint32_t>(inst.args[3], componentIdx))
+                componentStr = StringFormat::Fmt("%c", swizzle[componentIdx & 0x3]);
+              else
+                componentStr = ArgToString(inst.args[3], false);
+
+              lineStr += "<OUT>." + name + rowStr + "." + componentStr;
               lineStr += " = " + ArgToString(inst.args[4], false);
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.createHandle"))
+            {
+              // CreateHandle(resourceClass,rangeId,index,nonUniformIndex)
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::createHandle);
+              rdcstr handleStr = resultIdStr;
+              ResourceClass resClass;
+              rdcstr resName;
+              uint32_t resIndex;
+              bool hasResIndex = getival<uint32_t>(inst.args[2], resIndex);
+              if(getival<ResourceClass>(inst.args[1], resClass))
+              {
+                if(hasResIndex)
+                {
+                  ResourceHandle resHandle;
+                  bool validRes = true;
+                  switch(resClass)
+                  {
+                    case ResourceClass::SRV:
+                      resName = entryPoint->srvs[resIndex].name;
+                      resHandle.srv = &entryPoint->srvs[resIndex];
+                      break;
+                    case ResourceClass::UAV:
+                      resName = entryPoint->uavs[resIndex].name;
+                      resHandle.uav = &entryPoint->uavs[resIndex];
+                      break;
+                    case ResourceClass::CBuffer:
+                      resName = entryPoint->cbuffers[resIndex].name;
+                      resHandle.cbuffer = &entryPoint->cbuffers[resIndex];
+                      break;
+                    case ResourceClass::Sampler:
+                      resName = entryPoint->samplers[resIndex].name;
+                      resHandle.sampler = &entryPoint->samplers[resIndex];
+                      break;
+                    default:
+                      validRes = false;
+                      resName = "INVALID RESOURCE CLASS";
+                      break;
+                  };
+
+                  if(validRes)
+                  {
+                    resHandle.name = resName;
+                    resHandle.resourceClass = resClass;
+                    resHandle.resourceIndex = resIndex;
+                    resHandles[handleStr] = resHandle;
+                    ssaAliases[handleStr] = resName;
+                  }
+                  uint32_t index;
+                  if(getival<uint32_t>(inst.args[3], index))
+                  {
+                    if(index != resIndex)
+                      commentStr += " index = " + ToStr(index);
+                  }
+                }
+                else
+                {
+                  switch(resClass)
+                  {
+                    case ResourceClass::SRV: resName = "SRV"; break;
+                    case ResourceClass::UAV: resName = "UAV"; break;
+                    case ResourceClass::CBuffer: resName = "CBuffer"; break;
+                    case ResourceClass::Sampler: resName = "Sampler"; break;
+                    default: resName = "INVALID RESOURCE CLASS"; break;
+                  };
+                }
+              }
+              else
+              {
+                resName = "ResourceClass:" + ArgToString(inst.args[1], false);
+              }
+              if(!hasResIndex)
+              {
+                resName += "[" + ArgToString(inst.args[2], false) + "]";
+                commentStr += " index = " + ArgToString(inst.args[3], false);
+              }
+              uint32_t value;
+              if(getival<uint32_t>(inst.args[4], value))
+              {
+                if(value != 0)
+                  commentStr += " nonUniformIndex = true";
+              }
+              lineStr += resName;
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.cbufferLoad"))
+            {
+              // CBufferLoad(handle,byteOffset,alignment)
+              // CBufferLoadLegacy(handle,regIndex)
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              bool loadLegacy = funcCallName.beginsWith("dx.op.cbufferLoadLegacy");
+              if(loadLegacy)
+                RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::cbufferLoadLegacy);
+              else
+                RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::cbufferLoad);
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              if(resHandles.count(handleStr) > 0)
+              {
+                uint32_t regIndex;
+                if(getival<uint32_t>(inst.args[2], regIndex))
+                {
+                  if(!loadLegacy)
+                  {
+                    // TODO: handle non 16-byte aligned offsets
+                    // Convert byte offset to a register index
+                    regIndex = regIndex / 16;
+                    // uint32_t alignment = getival<uint32_t>(inst.args[3]);
+                  }
+                  uint32_t resourceIndex = resHandles[handleStr].resourceIndex;
+                  lineStr += MakeCBufferRegisterStr(regIndex, entryPoint->cbuffers[resourceIndex]);
+                }
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.bufferLoad"))
+            {
+              // BufferLoad(srv,index,wot)
+              // wot is unused
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::bufferLoad);
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              if(resHandles.count(handleStr) > 0)
+              {
+                lineStr += resHandles[handleStr].name;
+                lineStr += "[" + ArgToString(inst.args[2], false) + "]";
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.rawBufferLoad"))
+            {
+              // RawBufferLoad(srv,index,elementOffset,mask,alignment)
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::rawBufferLoad);
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              if(resHandles.count(handleStr) > 0)
+              {
+                lineStr += resHandles[handleStr].name;
+                if(!isUndef(inst.args[2]))
+                {
+                  lineStr += "[" + ArgToString(inst.args[2], false) + "]";
+                  if(!isUndef(inst.args[3]))
+                  {
+                    uint32_t elementOffset;
+                    if(getival<uint32_t>(inst.args[3], elementOffset))
+                    {
+                      if(elementOffset > 0)
+                        lineStr += " + " + ToStr(elementOffset) + " bytes";
+                    }
+                    else
+                    {
+                      lineStr += " + " + ArgToString(inst.args[3], false) + " bytes";
+                    }
+                  }
+                }
+                else
+                {
+                  lineStr += "[" + ArgToString(inst.args[3], false) + "]";
+                }
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.bufferStore") ||
+                    funcCallName.beginsWith("dx.op.rawBufferStore"))
+            {
+              if(funcCallName.beginsWith("dx.op.bufferStore"))
+              {
+                // BufferStore(uav,coord0,coord1,value0,value1,value2,value3,mask)
+                showDxFuncName = false;
+                uint32_t dxopCode;
+                RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+                RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::bufferStore);
+              }
+              else
+              {
+                // RawBufferStore(uav,index,elementOffset,value0,value1,value2,value3,mask,alignment)
+                showDxFuncName = false;
+                uint32_t dxopCode;
+                RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+                RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::rawBufferStore);
+              }
+
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              if(resHandles.count(handleStr) > 0)
+              {
+                uint32_t offset = 0;
+                bool validElementOffset = !isUndef(inst.args[3]);
+                bool constantElementOffset = validElementOffset && getival(inst.args[3], offset);
+
+                lineStr += resHandles[handleStr].name;
+                uint32_t index;
+                if(getival(inst.args[2], index))
+                {
+                  if((offset == 0) || (index > 0))
+                    lineStr += "[" + ToStr(index) + "]";
+                }
+                else
+                {
+                  lineStr += "[" + ArgToString(inst.args[2], false) + "]";
+                }
+                if(validElementOffset)
+                {
+                  if(constantElementOffset)
+                  {
+                    if(offset > 0)
+                      lineStr += " + " + ToStr(offset) + " bytes";
+                  }
+                  else
+                  {
+                    lineStr += " + " + ArgToString(inst.args[3], false) + " bytes";
+                  }
+                }
+                lineStr += " = ";
+                lineStr += "{";
+                bool needComma = false;
+                for(uint32_t a = 4; a < 8; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    if(needComma)
+                      lineStr += ", ";
+                    lineStr += ArgToString(inst.args[a], false);
+                    needComma = true;
+                  }
+                }
+                lineStr += "}";
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.textureLoad"))
+            {
+              // TextureLoad(srv,mipLevelOrSampleCount,coord0,coord1,coord2,offset0,offset1,offset2)
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::textureLoad);
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              if(resHandles.count(handleStr) > 0)
+              {
+                lineStr += resHandles[handleStr].name;
+                lineStr += ".Load(";
+                bool needComma = false;
+                const EntryPointInterface::SRV *texture = resHandles[handleStr].srv;
+                for(uint32_t a = 3; a < 6; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    if(needComma)
+                      lineStr += ", ";
+                    lineStr += ArgToString(inst.args[a], false);
+                    needComma = true;
+                  }
+                }
+                bool needText = true;
+                if(!isUndef(inst.args[2]))
+                {
+                  rdcstr prefix;
+                  bool showArg = true;
+                  if(needText)
+                  {
+                    if(texture && texture->sampleCount > 1)
+                    {
+                      prefix = "SampleIndex = ";
+                    }
+                    else
+                    {
+                      prefix = "MipSlice = ";
+                      uint32_t mipSlice;
+                      if(getival<uint32_t>(inst.args[2], mipSlice))
+                        showArg = mipSlice > 0;
+                    }
+                  }
+                  if(showArg)
+                  {
+                    needText = false;
+                    lineStr += ", ";
+                    lineStr += prefix;
+                    lineStr += ArgToString(inst.args[2], false);
+                  }
+                }
+                needText = true;
+                for(uint32_t a = 6; a < 9; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    lineStr += ", ";
+                    if(needText)
+                    {
+                      lineStr += "Offset = ";
+                      needText = false;
+                    }
+                    lineStr += ArgToString(inst.args[a], false);
+                  }
+                }
+                lineStr += ")";
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.textureStore"))
+            {
+              // TextureStore(srv,coord0,coord1,coord2,value0,value1,value2,value3,mask)
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::textureStore);
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              if(resHandles.count(handleStr) > 0)
+              {
+                lineStr += resHandles[handleStr].name;
+                lineStr += "[";
+                bool needComma = false;
+                for(uint32_t a = 2; a < 5; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    if(needComma)
+                      lineStr += ", ";
+                    lineStr += ArgToString(inst.args[a], false);
+                    needComma = true;
+                  }
+                }
+                lineStr += "]";
+                lineStr += " = ";
+                lineStr += "{";
+                needComma = false;
+                for(uint32_t a = 5; a < 9; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    if(needComma)
+                      lineStr += ", ";
+                    lineStr += ArgToString(inst.args[a], false);
+                    needComma = true;
+                  }
+                }
+                lineStr += "}";
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.sample") &&
+                    !funcCallName.beginsWith("dx.op.sampleIndex"))
+            {
+              // Sample(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,clamp)
+              // SampleBias(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,bias,clamp)
+              // SampleLevel(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,LOD)
+              // SampleGrad(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp)
+              // SampleCmp(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,clamp)
+              // SampleCmpLevelZero(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue)
+              // SampleCmpLevel(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,lod)
+              // SampleCmpGrad(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,ddx0,ddx1,ddx2,ddy0,ddy1,ddy2,clamp)
+              // SampleCmpBias(srv,sampler,coord0,coord1,coord2,coord3,offset0,offset1,offset2,compareValue,bias,clamp)
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERT((dxopCode == (uint32_t)DXOp::sample) ||
+                        (dxopCode == (uint32_t)DXOp::sampleBias) ||
+                        (dxopCode == (uint32_t)DXOp::sampleLevel) ||
+                        (dxopCode == (uint32_t)DXOp::sampleGrad) ||
+                        (dxopCode == (uint32_t)DXOp::sampleCmp) ||
+                        (dxopCode == (uint32_t)DXOp::sampleCmpLevelZero) ||
+                        (dxopCode == (uint32_t)DXOp::sampleCmpLevel) ||
+                        (dxopCode == (uint32_t)DXOp::sampleCmpGrad) ||
+                        (dxopCode == (uint32_t)DXOp::sampleCmpBias));
+              showDxFuncName = false;
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              if(resHandles.count(handleStr) > 0)
+              {
+                lineStr += resHandles[handleStr].name;
+                lineStr += ".";
+                rdcstr dxFuncSig = funcNameSigs[dxopCode];
+                int paramStart = dxFuncSig.find('(') + 1;
+                if(paramStart > 0)
+                  lineStr += dxFuncSig.substr(0, paramStart);
+                else
+                  lineStr += "UNKNOWN DX FUNCTION";
+
+                // sampler is 2
+                rdcstr samplerStr = ArgToString(inst.args[2], false);
+                if(resHandles.count(samplerStr) > 0)
+                  samplerStr = resHandles[samplerStr].name;
+                lineStr += samplerStr;
+
+                for(uint32_t a = 3; a < 7; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    lineStr += ", ";
+                    lineStr += ArgToString(inst.args[a], false);
+                  }
+                }
+                bool needText = true;
+                for(uint32_t a = 7; a < 10; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    lineStr += ", ";
+                    if(needText)
+                    {
+                      lineStr += "Offset = {";
+                      needText = false;
+                    }
+                    lineStr += ArgToString(inst.args[a], false);
+                  }
+                }
+                if(!needText)
+                  lineStr += "}";
+
+                int paramStrCount = (int)dxFuncSig.size();
+                for(size_t a = 1; a < 10; ++a)
+                {
+                  if(paramStart < paramStrCount)
+                  {
+                    int paramEnd = dxFuncSig.find(',', paramStart);
+                    if(paramEnd == -1)
+                      paramEnd = paramStrCount;
+                    paramStart = paramEnd + 1;
+                  }
+                }
+                for(uint32_t a = 10; a < inst.args.size(); ++a)
+                {
+                  rdcstr paramNameStr;
+                  if(paramStart < paramStrCount)
+                  {
+                    int paramEnd = dxFuncSig.find(',', paramStart);
+                    if(paramEnd == -1)
+                      paramEnd = paramStrCount - 1;
+                    if(paramEnd > paramStart)
+                    {
+                      rdcstr dxParamName = dxFuncSig.substr(paramStart, paramEnd - paramStart);
+                      paramStart = paramEnd + 1;
+                      paramNameStr = "/*";
+                      paramNameStr += dxParamName;
+                      paramNameStr += "*/ ";
+                    }
+                  }
+                  if(!isUndef(inst.args[a]))
+                  {
+                    lineStr += ", ";
+                    lineStr += paramNameStr;
+                    lineStr += ArgToString(inst.args[a], false);
+                  }
+                }
+                lineStr += ")";
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.atomicBinOp"))
+            {
+              // AtomicBinOp(handle, atomicOp, offset0, offset1, offset2, newValue)
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::atomicBinOp);
+              rdcstr handleStr = ArgToString(inst.args[1], false);
+              AtomicBinOpCode atomicBinOpCode;
+              if((resHandles.count(handleStr) > 0) &&
+                 getival<AtomicBinOpCode>(inst.args[2], atomicBinOpCode))
+              {
+                lineStr += resHandles[handleStr].name;
+                lineStr += ".";
+                lineStr += "Interlocked";
+                lineStr += ToStr(atomicBinOpCode);
+                lineStr += "(";
+                lineStr += "{";
+                bool needComma = false;
+                for(uint32_t a = 3; a < 6; ++a)
+                {
+                  if(!isUndef(inst.args[a]))
+                  {
+                    if(needComma)
+                      lineStr += ", ";
+                    lineStr += ArgToString(inst.args[a], false);
+                    needComma = true;
+                  }
+                }
+                lineStr += "}";
+                if(!isUndef(inst.args[6]))
+                {
+                  lineStr += ", ";
+                  lineStr += ArgToString(inst.args[6], false);
+                }
+                lineStr += ")";
+              }
+              else
+              {
+                showDxFuncName = true;
+              }
+            }
+            else if(showDxFuncName && funcCallName.beginsWith("dx.op.dot"))
+            {
+              // Dot4(ax,ay,az,aw,bx,by,bz,bw)
+              // Dot3(ax,ay,az,bx,by,bz)
+              // Dot2(ax,ay,bx,by)
+              showDxFuncName = false;
+              uint32_t dxopCode;
+              RDCASSERT(getival<uint32_t>(inst.args[0], dxopCode));
+              uint32_t countComponents = 0;
+              if(funcCallName.beginsWith("dx.op.dot4"))
+              {
+                countComponents = 4;
+                RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::dot4);
+              }
+              else if(funcCallName.beginsWith("dx.op.dot3"))
+              {
+                countComponents = 3;
+                RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::dot3);
+              }
+              else if(funcCallName.beginsWith("dx.op.dot2"))
+              {
+                countComponents = 2;
+                RDCASSERTEQUAL(dxopCode, (uint32_t)DXOp::dot2);
+              }
+              lineStr += "dot(";
+              lineStr += "{";
+              bool needComma = false;
+              uint32_t aVecStart = 1;
+              uint32_t aVecEnd = 1 + countComponents;
+              for(uint32_t a = aVecStart; a < aVecEnd; ++a)
+              {
+                if(!isUndef(inst.args[a]))
+                {
+                  if(needComma)
+                    lineStr += ", ";
+                  lineStr += ArgToString(inst.args[a], false);
+                  needComma = true;
+                }
+              }
+              lineStr += "}";
+              needComma = false;
+              uint32_t bVecStart = aVecEnd;
+              uint32_t bVecEnd = bVecStart + countComponents;
+              lineStr += ", {";
+              for(uint32_t a = bVecStart; a < bVecEnd; ++a)
+              {
+                if(!isUndef(inst.args[a]))
+                {
+                  if(needComma)
+                    lineStr += ", ";
+                  lineStr += ArgToString(inst.args[a], false);
+                  needComma = true;
+                }
+              }
+              lineStr += "}";
+              lineStr += ")";
             }
             else if(funcCallName.beginsWith("llvm.dbg."))
             {
@@ -2484,22 +3033,25 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
               if(showDxFuncName)
               {
                 rdcstr dxFuncSig;
+                int paramStart = -1;
                 if(Constant *op = cast<Constant>(inst.args[0]))
                 {
                   uint32_t opcode = op->getU32();
-                  if(opcode < ARRAY_COUNT(funcNames))
+                  if(opcode < ARRAY_COUNT(funcNameSigs))
                   {
-                    lineStr += funcNames[opcode];
-                    dxFuncSig = funcSigs[opcode];
+                    dxFuncSig = funcNameSigs[opcode];
+                    paramStart = dxFuncSig.find('(') + 1;
+                    if(paramStart > 0)
+                      lineStr += dxFuncSig.substr(0, paramStart);
+                    else
+                      lineStr += dxFuncSig;
                   }
                   else
                   {
                     lineStr += escapeStringIfNeeded(funcCallName);
                   }
                 }
-                lineStr += "(";
                 bool first = true;
-                int paramStart = 0;
                 int paramStrCount = (int)dxFuncSig.size();
                 for(size_t a = 1; a < inst.args.size(); ++a)
                 {
@@ -2508,7 +3060,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   {
                     int paramEnd = dxFuncSig.find(',', paramStart);
                     if(paramEnd == -1)
-                      paramEnd = paramStrCount;
+                      paramEnd = paramStrCount - 1;
                     if(paramEnd > paramStart)
                     {
                       rdcstr dxParamName = dxFuncSig.substr(paramStart, paramEnd - paramStart);
@@ -2519,16 +3071,17 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                     }
                   }
                   // Don't show "undef" parameters
-                  bool isUndef = false;
-                  if(const Constant *c = cast<Constant>(inst.args[a]))
-                    isUndef = c->isUndef();
-                  if(!isUndef)
+                  if(!isUndef(inst.args[a]))
                   {
                     if(!first)
                       lineStr += ", ";
 
                     lineStr += paramNameStr;
-                    lineStr += ArgToString(inst.args[a], false);
+                    rdcstr ssaStr = ArgToString(inst.args[a], false);
+                    if(ssaAliases.count(ssaStr) == 0)
+                      lineStr += ssaStr;
+                    else
+                      lineStr += ssaAliases[ssaStr];
                     first = false;
                   }
                 }
@@ -2734,7 +3287,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   // %3 = getelementptr [6 x float], [6 x float] addrspace(3)*
                   // @"\01?s_x@@3@$$A.1dim", i32 0, i32 %9
 
-                  // RD: GroupShared float* _3 = s_x[0] + _9;
+                  // RD: GroupShared float* _3 = s_x[_9];
                   fallbackOutput = false;
 
                   rdcstr addrspaceStr(typeStr.substr(start, end - start));
@@ -2769,8 +3322,8 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   rdcstr ptrStr = ArgToString(inst.args[0], false);
                   // Try to de-mangle the pointer name
                   // @"\01?shared_pos@@3PAY0BC@$$CAMA.1dim" -> shared_pos
-                  // Take the string between first alphabetical character and last alphanumeric
-                  // character or "_"
+                  // Take the string between first alphabetical character and last
+                  // alphanumeric character or "_"
                   start = 0;
                   int strEnd = (int)ptrStr.size();
                   while(start < strEnd)
@@ -2798,7 +3351,8 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
                   bool first = true;
                   if(inst.args.size() > 1)
                   {
-                    if(getival<uint32_t>(inst.args[1]) > 0)
+                    uint32_t v = 0;
+                    if(!getival<uint32_t>(inst.args[1], v) || (v > 0))
                     {
                       lineStr += "[";
                       lineStr += ArgToString(inst.args[1], false);
@@ -2891,13 +3445,13 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             rdcstr opStr;
             switch(inst.op)
             {
-              case Operation::FOrdEqual: opStr = " = "; break;
+              case Operation::FOrdEqual: opStr = " == "; break;
               case Operation::FOrdGreater: opStr = " > "; break;
               case Operation::FOrdGreaterEqual: opStr = " >= "; break;
               case Operation::FOrdLess: opStr = " < "; break;
               case Operation::FOrdLessEqual: opStr = " <= "; break;
               case Operation::FOrdNotEqual: opStr = " != "; break;
-              case Operation::FUnordEqual: opStr = " = ";
+              case Operation::FUnordEqual: opStr = " == ";
               case Operation::FUnordGreater: opStr = " > "; break;
               case Operation::FUnordGreaterEqual: opStr = " >= "; break;
               case Operation::FUnordLess: opStr = " < "; break;
@@ -2962,7 +3516,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
             rdcstr opStr;
             switch(inst.op)
             {
-              case Operation::IEqual: opStr += " = "; break;
+              case Operation::IEqual: opStr += " == "; break;
               case Operation::INotEqual: opStr += " != "; break;
               case Operation::UGreater: opStr += " > "; break;
               case Operation::UGreaterEqual: opStr += " >= "; break;
@@ -3213,6 +3767,7 @@ void Program::MakeRDDisassemblyString(const DXBC::Reflection *reflection)
         {
           if(inst.getFuncCall() && inst.getFuncCall()->name.beginsWith("dx.op.annotateHandle"))
           {
+            // AnnotateHandle(res,props)
             if(const Constant *props = cast<Constant>(inst.args[2]))
             {
               const Constant *packed[2];
@@ -4158,4 +4713,121 @@ rdcstr DoStringise(const DXIL::Attribute &el)
     STRINGISE_BITFIELD_CLASS_BIT_NAMED(ZExt, "zeroext");
   }
   END_BITFIELD_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const DXIL::AtomicBinOpCode &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::AtomicBinOpCode)
+  {
+    STRINGISE_ENUM_CLASS(Add)
+    STRINGISE_ENUM_CLASS(And)
+    STRINGISE_ENUM_CLASS(Or)
+    STRINGISE_ENUM_CLASS(Xor)
+    STRINGISE_ENUM_CLASS(IMin)
+    STRINGISE_ENUM_CLASS(IMax)
+    STRINGISE_ENUM_CLASS(UMin)
+    STRINGISE_ENUM_CLASS(UMax)
+    STRINGISE_ENUM_CLASS(Exchange)
+    STRINGISE_ENUM_CLASS(Invalid)
+  }
+  END_ENUM_STRINGISE();
+}
+
+template <>
+rdcstr DoStringise(const DXIL::Operation &el)
+{
+  BEGIN_ENUM_STRINGISE(DXIL::Operation)
+  {
+    STRINGISE_ENUM_CLASS(NoOp)
+    STRINGISE_ENUM_CLASS(Call)
+    STRINGISE_ENUM_CLASS(Trunc)
+    STRINGISE_ENUM_CLASS(ZExt)
+    STRINGISE_ENUM_CLASS(SExt)
+    STRINGISE_ENUM_CLASS(FToU)
+    STRINGISE_ENUM_CLASS(FToS)
+    STRINGISE_ENUM_CLASS(UToF)
+    STRINGISE_ENUM_CLASS(SToF)
+    STRINGISE_ENUM_CLASS(FPTrunc)
+    STRINGISE_ENUM_CLASS(FPExt)
+    STRINGISE_ENUM_CLASS(PtrToI)
+    STRINGISE_ENUM_CLASS(IToPtr)
+    STRINGISE_ENUM_CLASS(Bitcast)
+    STRINGISE_ENUM_CLASS(AddrSpaceCast)
+    STRINGISE_ENUM_CLASS(ExtractVal)
+    STRINGISE_ENUM_CLASS(Ret)
+    STRINGISE_ENUM_CLASS(FAdd)
+    STRINGISE_ENUM_CLASS(FSub)
+    STRINGISE_ENUM_CLASS(FMul)
+    STRINGISE_ENUM_CLASS(FDiv)
+    STRINGISE_ENUM_CLASS(FRem)
+    STRINGISE_ENUM_CLASS(Add)
+    STRINGISE_ENUM_CLASS(Sub)
+    STRINGISE_ENUM_CLASS(Mul)
+    STRINGISE_ENUM_CLASS(UDiv)
+    STRINGISE_ENUM_CLASS(SDiv)
+    STRINGISE_ENUM_CLASS(URem)
+    STRINGISE_ENUM_CLASS(SRem)
+    STRINGISE_ENUM_CLASS(ShiftLeft)
+    STRINGISE_ENUM_CLASS(LogicalShiftRight)
+    STRINGISE_ENUM_CLASS(ArithShiftRight)
+    STRINGISE_ENUM_CLASS(And)
+    STRINGISE_ENUM_CLASS(Or)
+    STRINGISE_ENUM_CLASS(Xor)
+    STRINGISE_ENUM_CLASS(Unreachable)
+    STRINGISE_ENUM_CLASS(Alloca)
+    STRINGISE_ENUM_CLASS(GetElementPtr)
+    STRINGISE_ENUM_CLASS(Load)
+    STRINGISE_ENUM_CLASS(Store)
+    STRINGISE_ENUM_CLASS(FOrdFalse)
+    STRINGISE_ENUM_CLASS(FOrdEqual)
+    STRINGISE_ENUM_CLASS(FOrdGreater)
+    STRINGISE_ENUM_CLASS(FOrdGreaterEqual)
+    STRINGISE_ENUM_CLASS(FOrdLess)
+    STRINGISE_ENUM_CLASS(FOrdLessEqual)
+    STRINGISE_ENUM_CLASS(FOrdNotEqual)
+    STRINGISE_ENUM_CLASS(FOrd)
+    STRINGISE_ENUM_CLASS(FUnord)
+    STRINGISE_ENUM_CLASS(FUnordEqual)
+    STRINGISE_ENUM_CLASS(FUnordGreater)
+    STRINGISE_ENUM_CLASS(FUnordGreaterEqual)
+    STRINGISE_ENUM_CLASS(FUnordLess)
+    STRINGISE_ENUM_CLASS(FUnordLessEqual)
+    STRINGISE_ENUM_CLASS(FUnordNotEqual)
+    STRINGISE_ENUM_CLASS(FOrdTrue)
+    STRINGISE_ENUM_CLASS(IEqual)
+    STRINGISE_ENUM_CLASS(INotEqual)
+    STRINGISE_ENUM_CLASS(UGreater)
+    STRINGISE_ENUM_CLASS(UGreaterEqual)
+    STRINGISE_ENUM_CLASS(ULess)
+    STRINGISE_ENUM_CLASS(ULessEqual)
+    STRINGISE_ENUM_CLASS(SGreater)
+    STRINGISE_ENUM_CLASS(SGreaterEqual)
+    STRINGISE_ENUM_CLASS(SLess)
+    STRINGISE_ENUM_CLASS(SLessEqual)
+    STRINGISE_ENUM_CLASS(Select)
+    STRINGISE_ENUM_CLASS(ExtractElement)
+    STRINGISE_ENUM_CLASS(InsertElement)
+    STRINGISE_ENUM_CLASS(ShuffleVector)
+    STRINGISE_ENUM_CLASS(InsertValue)
+    STRINGISE_ENUM_CLASS(Branch)
+    STRINGISE_ENUM_CLASS(Phi)
+    STRINGISE_ENUM_CLASS(Switch)
+    STRINGISE_ENUM_CLASS(Fence)
+    STRINGISE_ENUM_CLASS(CompareExchange)
+    STRINGISE_ENUM_CLASS(LoadAtomic)
+    STRINGISE_ENUM_CLASS(StoreAtomic)
+    STRINGISE_ENUM_CLASS(AtomicExchange)
+    STRINGISE_ENUM_CLASS(AtomicAdd)
+    STRINGISE_ENUM_CLASS(AtomicSub)
+    STRINGISE_ENUM_CLASS(AtomicAnd)
+    STRINGISE_ENUM_CLASS(AtomicNand)
+    STRINGISE_ENUM_CLASS(AtomicOr)
+    STRINGISE_ENUM_CLASS(AtomicXor)
+    STRINGISE_ENUM_CLASS(AtomicMax)
+    STRINGISE_ENUM_CLASS(AtomicMin)
+    STRINGISE_ENUM_CLASS(AtomicUMax)
+    STRINGISE_ENUM_CLASS(AtomicUMin)
+  }
+  END_ENUM_STRINGISE();
 }

@@ -92,11 +92,9 @@ bool WrappedID3D12Device::Serialise_CreateStateObject(SerialiserType &ser,
     ID3D12StateObject *ret = NULL;
     HRESULT hr = E_NOINTERFACE;
 
-    // TODO: here we would need to process the state descriptor into any internal replay
-    // representation to know what's inside. We can also apply m_GlobalEXTUAV, m_GlobalEXTUAVSpace
-    // for processing extensions in the DXBC files
-
-    // unwrap the subobjects that need unwrapping
+    // unwrap the subobjects that need unwrapping in-place. We'll undo these after creating the
+    // object - this is probably better than unwrapping to a separate object since that requires
+    // rebasing all the associations etc
 
     rdcarray<ID3D12RootSignature *> rootSigs;
     rdcarray<ID3D12StateObject *> collections;
@@ -114,7 +112,6 @@ bool WrappedID3D12Device::Serialise_CreateStateObject(SerialiserType &ser,
       }
       else if(subs[i].Type == D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION)
       {
-        // both structs are the same
         D3D12_EXISTING_COLLECTION_DESC *coll = (D3D12_EXISTING_COLLECTION_DESC *)subs[i].pDesc;
         collections.push_back(coll->pExistingCollection);
         coll->pExistingCollection = Unwrap(coll->pExistingCollection);
@@ -130,19 +127,43 @@ bool WrappedID3D12Device::Serialise_CreateStateObject(SerialiserType &ser,
     else
     {
       SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIHardwareUnsupported,
-                       "Capture requires ID3D12Device2 which isn't available");
+                       "Capture requires ID3D12Device5 which isn't available");
       return false;
     }
 
     if(FAILED(hr))
     {
       SET_ERROR_RESULT(m_FailedReplayResult, ResultCode::APIReplayFailed,
-                       "Failed creating pipeline state, HRESULT: %s", ToStr(hr).c_str());
+                       "Failed creating state object, HRESULT: %s", ToStr(hr).c_str());
       return false;
     }
     else
     {
-      ret = new WrappedID3D12StateObject(ret, this);
+      for(UINT i = 0, r = 0, c = 0; i < Descriptor.NumSubobjects; i++)
+      {
+        if(subs[i].Type == D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE ||
+           subs[i].Type == D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE)
+        {
+          D3D12_GLOBAL_ROOT_SIGNATURE *global = (D3D12_GLOBAL_ROOT_SIGNATURE *)subs[i].pDesc;
+          // the same order as above, we can consume the rootSigs in order
+          global->pGlobalRootSignature = rootSigs[r++];
+        }
+        else if(subs[i].Type == D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION)
+        {
+          D3D12_EXISTING_COLLECTION_DESC *coll = (D3D12_EXISTING_COLLECTION_DESC *)subs[i].pDesc;
+          coll->pExistingCollection = collections[c++];
+        }
+      }
+
+      WrappedID3D12StateObject *wrapped = new WrappedID3D12StateObject(ret, this);
+
+      // TODO: Apply m_GlobalEXTUAV, m_GlobalEXTUAVSpace for processing extensions in the DXBC files?
+
+      wrapped->exports = new D3D12ShaderExportDatabase(
+          pStateObject, GetResourceManager()->GetRaytracingResourceAndUtilHandler(),
+          wrapped->GetProperties());
+
+      wrapped->exports->PopulateDatabase(Descriptor.NumSubobjects, subs);
 
       AddResource(pStateObject, ResourceType::PipelineState, "State Object");
       for(ID3D12RootSignature *rootSig : rootSigs)
@@ -158,65 +179,21 @@ bool WrappedID3D12Device::Serialise_CreateStateObject(SerialiserType &ser,
             .initialisationChunks.push_back((uint32_t)m_StructuredFile->chunks.size() - 2);
         m_GlobalEXTUAV = ~0U;
       }
-      GetResourceManager()->AddLiveResource(pStateObject, ret);
+      GetResourceManager()->AddLiveResource(pStateObject, wrapped);
     }
   }
 
   return true;
 }
 
-HRESULT WrappedID3D12Device::CreateStateObject(const D3D12_STATE_OBJECT_DESC *pDesc, REFIID riid,
-                                               _COM_Outptr_ void **ppStateObject)
+HRESULT
+WrappedID3D12Device::CreateStateObject(const D3D12_STATE_OBJECT_DESC *pDesc, REFIID riid,
+                                       _COM_Outptr_ void **ppStateObject)
 {
   if(pDesc == NULL)
     return m_pDevice5->CreateStateObject(pDesc, riid, ppStateObject);
 
-  D3D12_STATE_OBJECT_DESC unwrappedDesc = *pDesc;
-  rdcarray<D3D12_STATE_SUBOBJECT> subobjects;
-  subobjects.resize(unwrappedDesc.NumSubobjects);
-
-  rdcarray<ID3D12RootSignature *> rootsigs;
-  rdcarray<ID3D12StateObject *> collections;
-  for(size_t i = 0; i < subobjects.size(); i++)
-  {
-    subobjects[i] = pDesc->pSubobjects[i];
-    if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE ||
-       subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE)
-    {
-      // both structs are the same
-      D3D12_GLOBAL_ROOT_SIGNATURE *rootsig = (D3D12_GLOBAL_ROOT_SIGNATURE *)subobjects[i].pDesc;
-      rootsigs.push_back(rootsig->pGlobalRootSignature);
-    }
-    else if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION)
-    {
-      D3D12_EXISTING_COLLECTION_DESC *coll = (D3D12_EXISTING_COLLECTION_DESC *)subobjects[i].pDesc;
-      collections.push_back(coll->pExistingCollection);
-    }
-  }
-
-  rdcarray<D3D12_GLOBAL_ROOT_SIGNATURE> rootsigObjs;
-  rdcarray<D3D12_EXISTING_COLLECTION_DESC> collObjs;
-  rootsigObjs.resize(rootsigs.size());
-  collObjs.resize(collections.size());
-
-  for(size_t i = 0, r = 0, c = 0; i < subobjects.size(); i++)
-  {
-    if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE ||
-       subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE)
-    {
-      D3D12_GLOBAL_ROOT_SIGNATURE *rootsig = (D3D12_GLOBAL_ROOT_SIGNATURE *)subobjects[i].pDesc;
-      rootsigObjs[r].pGlobalRootSignature = Unwrap(rootsig->pGlobalRootSignature);
-      subobjects[i].pDesc = &rootsigObjs[r++];
-    }
-    else if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION)
-    {
-      D3D12_EXISTING_COLLECTION_DESC *coll = (D3D12_EXISTING_COLLECTION_DESC *)subobjects[i].pDesc;
-      collObjs[c] = *coll;
-      collObjs[c].pExistingCollection = Unwrap(collObjs[c].pExistingCollection);
-    }
-  }
-
-  unwrappedDesc.pSubobjects = subobjects.data();
+  D3D12_UNWRAPPED_STATE_OBJECT_DESC unwrappedDesc(*pDesc);
 
   if(ppStateObject == NULL)
     return m_pDevice5->CreateStateObject(&unwrappedDesc, riid, ppStateObject);
@@ -250,15 +227,34 @@ HRESULT WrappedID3D12Device::CreateStateObject(const D3D12_STATE_OBJECT_DESC *pD
       SCOPED_SERIALISE_CHUNK(D3D12Chunk::Device_CreateStateObject);
       Serialise_CreateStateObject(ser, pDesc, riid, (void **)&wrapped);
 
+      wrapped->exports = new D3D12ShaderExportDatabase(
+          wrapped->GetResourceID(), GetResourceManager()->GetRaytracingResourceAndUtilHandler(),
+          wrapped->GetProperties());
+
+      wrapped->exports->PopulateDatabase(pDesc->NumSubobjects, pDesc->pSubobjects);
+
       D3D12ResourceRecord *record = GetResourceManager()->AddResourceRecord(wrapped->GetResourceID());
       record->type = Resource_PipelineState;
       record->Length = 0;
       wrapped->SetResourceRecord(record);
 
-      for(ID3D12RootSignature *sig : rootsigs)
-        record->AddParent(GetRecord(sig));
-      for(ID3D12StateObject *coll : collections)
-        record->AddParent(GetRecord(coll));
+      for(UINT i = 0; i < pDesc->NumSubobjects; i++)
+      {
+        if(pDesc->pSubobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE ||
+           pDesc->pSubobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE)
+        {
+          // both structs are the same
+          D3D12_GLOBAL_ROOT_SIGNATURE *rootsig =
+              (D3D12_GLOBAL_ROOT_SIGNATURE *)pDesc->pSubobjects[i].pDesc;
+          record->AddParent(GetRecord(rootsig->pGlobalRootSignature));
+        }
+        else if(pDesc->pSubobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION)
+        {
+          D3D12_EXISTING_COLLECTION_DESC *coll =
+              (D3D12_EXISTING_COLLECTION_DESC *)pDesc->pSubobjects[i].pDesc;
+          record->AddParent(GetRecord(coll->pExistingCollection));
+        }
+      }
 
       if(vendorChunk)
         record->AddChunk(vendorChunk);

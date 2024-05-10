@@ -312,8 +312,25 @@ enum class Operation : uint8_t
 // added as needed, since names in docs/LLVM don't match neatly so there's no pre-made list
 enum class DXOp : uint32_t
 {
+  loadInput = 4,
+  storeInput = 5,
   UMin = 40,
+  dot2 = 54,
+  dot3 = 55,
+  dot4 = 56,
   createHandle = 57,
+  cbufferLoad = 59,
+  cbufferLoadLegacy = 59,
+  sample = 60,
+  sampleBias = 61,
+  sampleLevel = 62,
+  sampleGrad = 63,
+  sampleCmp = 64,
+  sampleCmpLevelZero = 65,
+  textureLoad = 66,
+  textureStore = 67,
+  bufferLoad = 68,
+  bufferStore = 69,
   atomicBinOp = 78,
   barrier = 80,
   groupId = 94,
@@ -329,6 +346,23 @@ enum class DXOp : uint32_t
   dispatchMesh = 173,
   annotateHandle = 216,
   createHandleFromBinding = 217,
+  sampleCmpLevel = 224,
+  sampleCmpGrad = 254,
+  sampleCmpBias = 255,
+};
+
+enum class AtomicBinOpCode : uint32_t
+{
+  Add,
+  And,
+  Or,
+  Xor,
+  IMin,
+  IMax,
+  UMin,
+  UMax,
+  Exchange,
+  Invalid    // Must be last.
 };
 
 inline Operation DecodeBinOp(const Type *type, uint64_t opcode)
@@ -1144,9 +1178,9 @@ private:
   void assignTypeId(const Constant *c);
 };
 
-struct EntryPoint
+struct EntryPointInterface
 {
-  EntryPoint(const Metadata *entryPoint);
+  EntryPointInterface(const Metadata *entryPoint);
 
   struct Signature
   {
@@ -1198,6 +1232,7 @@ struct EntryPoint
     CBuffer(const Metadata *cbuffer);
     uint32_t sizeInBytes;
     bool isTBuffer;
+    const DXBC::CBuffer *cbufferRefl;
   };
 
   struct Sampler : ResourceBase
@@ -1230,6 +1265,7 @@ public:
   const bytebuf &GetBytes() const { return m_Bytes; }
   void FetchComputeProperties(DXBC::Reflection *reflection);
   DXBC::Reflection *GetReflection();
+  rdcstr GetDebugStatus();
   rdcarray<ShaderEntryPoint> GetEntryPoints();
   void FillRayPayloads(
       Program *executable,
@@ -1276,7 +1312,7 @@ protected:
   uint32_t GetMetaSlot(const DebugLocation *l) const;
   void AssignMetaSlot(rdcarray<Metadata *> &metaSlots, uint32_t &nextMetaSlot, DebugLocation &l);
 
-  void FetchEntryPoints(rdcarray<EntryPoint> &entryPoints);
+  void FetchEntryPointInterfaces(rdcarray<EntryPointInterface> &entryPointInterfaces);
   const Metadata *FindMetadata(uint32_t slot) const;
   rdcstr ArgToString(const Value *v, bool withTypes, const rdcstr &attrString = "") const;
   rdcstr DisassembleComDats(int &instructionLine) const;
@@ -1359,3 +1395,5 @@ rdcstr escapeStringIfNeeded(const rdcstr &name);
 
 DECLARE_REFLECTION_ENUM(DXIL::Attribute);
 DECLARE_STRINGISE_TYPE(DXIL::InstructionFlags);
+DECLARE_STRINGISE_TYPE(DXIL::AtomicBinOpCode);
+DECLARE_STRINGISE_TYPE(DXIL::Operation);

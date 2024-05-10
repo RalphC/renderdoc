@@ -65,6 +65,13 @@ rdcstr WrappedID3D12Device::GetChunkName(uint32_t idx)
   return ToStr((D3D12Chunk)idx);
 }
 
+D3D12ShaderCache *WrappedID3D12Device::GetShaderCache()
+{
+  if(m_ShaderCache == NULL)
+    m_ShaderCache = new D3D12ShaderCache(this);
+  return m_ShaderCache;
+}
+
 D3D12DebugManager *WrappedID3D12Device::GetDebugManager()
 {
   return m_Replay->GetDebugManager();
@@ -504,6 +511,7 @@ BOOL STDMETHODCALLTYPE WrappedAGS12::ExtensionsSupported()
 WrappedID3D12Device::WrappedID3D12Device(ID3D12Device *realDevice, D3D12InitParams params,
                                          bool enabledDebugLayer)
     : m_RefCounter(realDevice, false),
+      m_DevConfig(realDevice, this),
       m_SoftRefCounter(NULL, false),
       m_pDevice(realDevice),
       m_debugLayerEnabled(enabledDebugLayer),
@@ -1221,6 +1229,17 @@ HRESULT WrappedID3D12Device::QueryInterface(REFIID riid, void **ppvObject)
     {
       return E_NOINTERFACE;
     }
+  }
+  else if(riid == __uuidof(ID3D12DeviceConfiguration))
+  {
+    if(m_DevConfig.IsValid())
+    {
+      *ppvObject = (ID3D12DeviceConfiguration *)&m_DevConfig;
+      AddRef();
+      return S_OK;
+    }
+
+    return E_NOINTERFACE;
   }
   else if(riid == __uuidof(ID3D12DeviceDownlevel))
   {
@@ -2572,6 +2591,9 @@ void WrappedID3D12Device::StartFrameCapture(DeviceOwnedWindow devWnd)
 
     GPUSyncAllQueues();
 
+    // wait until we've synced all queues to check for these
+    GetResourceManager()->GetRaytracingResourceAndUtilHandler()->CheckPendingASBuilds();
+
     GetResourceManager()->PrepareInitialContents();
 
     if(initStateCurList)
@@ -3647,14 +3669,13 @@ void WrappedID3D12Device::SetName(ID3D12DeviceChild *pResource, const char *Name
 }
 
 template <typename SerialiserType>
-bool WrappedID3D12Device::Serialise_CreateAS(
-    SerialiserType &ser, ID3D12Resource *pResource, UINT64 resourceOffset,
-    const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO &preBldInfo,
-    D3D12AccelerationStructure *as)
+bool WrappedID3D12Device::Serialise_CreateAS(SerialiserType &ser, ID3D12Resource *pResource,
+                                             UINT64 resourceOffset, UINT64 byteSize,
+                                             D3D12AccelerationStructure *as)
 {
   SERIALISE_ELEMENT(pResource);
   SERIALISE_ELEMENT(resourceOffset);
-  SERIALISE_ELEMENT(preBldInfo);
+  SERIALISE_ELEMENT(byteSize);
   SERIALISE_ELEMENT_LOCAL(asId, as->GetResourceID());
 
   SERIALISE_CHECK_READ_ERRORS();
@@ -3663,7 +3684,7 @@ bool WrappedID3D12Device::Serialise_CreateAS(
   {
     WrappedID3D12Resource *asbWrappedResource = (WrappedID3D12Resource *)pResource;
     D3D12AccelerationStructure *accStructAtOffset = NULL;
-    if(asbWrappedResource->CreateAccStruct(resourceOffset, preBldInfo, &accStructAtOffset))
+    if(asbWrappedResource->CreateAccStruct(resourceOffset, byteSize, &accStructAtOffset))
     {
       GetResourceManager()->AddLiveResource(asId, accStructAtOffset);
 
@@ -3682,18 +3703,15 @@ bool WrappedID3D12Device::Serialise_CreateAS(
   return true;
 }
 
-template bool WrappedID3D12Device::Serialise_CreateAS(
-    ReadSerialiser &ser, ID3D12Resource *pResource, UINT64 resourceOffset,
-    const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO &preBldInfo,
-    D3D12AccelerationStructure *as);
-template bool WrappedID3D12Device::Serialise_CreateAS(
-    WriteSerialiser &ser, ID3D12Resource *pResource, UINT64 resourceOffset,
-    const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO &preBldInfo,
-    D3D12AccelerationStructure *as);
+template bool WrappedID3D12Device::Serialise_CreateAS(ReadSerialiser &ser, ID3D12Resource *pResource,
+                                                      UINT64 resourceOffset, UINT64 byteSize,
+                                                      D3D12AccelerationStructure *as);
+template bool WrappedID3D12Device::Serialise_CreateAS(WriteSerialiser &ser, ID3D12Resource *pResource,
+                                                      UINT64 resourceOffset, UINT64 byteSize,
+                                                      D3D12AccelerationStructure *as);
 
 void WrappedID3D12Device::CreateAS(ID3D12Resource *pResource, UINT64 resourceOffset,
-                                   const D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO &preBldInfo,
-                                   D3D12AccelerationStructure *as)
+                                   UINT64 byteSize, D3D12AccelerationStructure *as)
 {
   if(IsCaptureMode(m_State))
   {
@@ -3704,7 +3722,7 @@ void WrappedID3D12Device::CreateAS(ID3D12Resource *pResource, UINT64 resourceOff
     {
       WriteSerialiser &ser = GetThreadSerialiser();
       SCOPED_SERIALISE_CHUNK(D3D12Chunk::CreateAS);
-      Serialise_CreateAS(ser, pResource, resourceOffset, preBldInfo, as);
+      Serialise_CreateAS(ser, pResource, resourceOffset, byteSize, as);
       record->AddChunk(scope.Get());
     }
   }
@@ -4116,8 +4134,7 @@ void WrappedID3D12Device::CreateInternalResources()
 
   m_GPUSyncCounter = 0;
 
-  if(m_ShaderCache == NULL)
-    m_ShaderCache = new D3D12ShaderCache(this);
+  GetShaderCache()->SetDevConfiguration(m_Replay->GetDevConfiguration());
 
   if(m_TextRenderer == NULL)
     m_TextRenderer = new D3D12TextRenderer(this);
@@ -4938,6 +4955,16 @@ void WrappedID3D12Device::ReplayLog(uint32_t startEventID, uint32_t endEventID,
 
     ExecuteLists();
     FlushLists(true);
+
+    // clear any previous ray dispatch references
+    D3D12CommandData &cmd = *m_Queue->GetCommandData();
+
+    for(PatchedRayDispatch::Resources &r : cmd.m_RayDispatches)
+    {
+      r.lookupBuffer->Release();
+      r.patchScratchBuffer->Release();
+    }
+    cmd.m_RayDispatches.clear();
 
     if(HasFatalError())
       return;

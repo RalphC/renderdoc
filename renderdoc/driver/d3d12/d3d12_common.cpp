@@ -256,22 +256,46 @@ void BarrierSet::Unapply(ID3D12GraphicsCommandListX *list)
   RDCASSERT(newToOldBarriers.empty());
 }
 
-bool EnableD3D12DebugLayer(PFN_D3D12_GET_DEBUG_INTERFACE getDebugInterface)
+bool EnableD3D12DebugLayer(D3D12DevConfiguration *devConfig,
+                           PFN_D3D12_GET_DEBUG_INTERFACE getDebugInterface)
 {
-  if(!getDebugInterface)
-    getDebugInterface = (PFN_D3D12_GET_DEBUG_INTERFACE)GetProcAddress(GetModuleHandleA("d3d12.dll"),
-                                                                      "D3D12GetDebugInterface");
-
-  if(!getDebugInterface)
+  ID3D12Debug *debug = NULL;
+  if(devConfig)
   {
-    RDCERR("Couldn't find D3D12GetDebugInterface!");
-    return false;
+    if(devConfig->debug)
+    {
+      debug = devConfig->debug;
+      debug->AddRef();
+    }
+  }
+  else
+  {
+    if(!getDebugInterface)
+      getDebugInterface = (PFN_D3D12_GET_DEBUG_INTERFACE)GetProcAddress(
+          GetModuleHandleA("d3d12.dll"), "D3D12GetDebugInterface");
+
+    if(!getDebugInterface)
+    {
+      RDCERR("Couldn't find D3D12GetDebugInterface!");
+      return false;
+    }
+
+    HRESULT hr = getDebugInterface(__uuidof(ID3D12Debug), (void **)&debug);
+
+    if(FAILED(hr))
+      SAFE_RELEASE(debug);
+
+    if(hr == DXGI_ERROR_SDK_COMPONENT_MISSING)
+    {
+      RDCWARN("Debug layer not available: DXGI_ERROR_SDK_COMPONENT_MISSING");
+    }
+    else if(FAILED(hr))
+    {
+      RDCERR("Couldn't enable debug layer: %x", hr);
+    }
   }
 
-  ID3D12Debug *debug = NULL;
-  HRESULT hr = getDebugInterface(__uuidof(ID3D12Debug), (void **)&debug);
-
-  if(SUCCEEDED(hr) && debug)
+  if(debug)
   {
     debug->EnableDebugLayer();
 
@@ -297,14 +321,6 @@ bool EnableD3D12DebugLayer(PFN_D3D12_GET_DEBUG_INTERFACE getDebugInterface)
     SAFE_RELEASE(debug);
 
     return true;
-  }
-  else if(hr == DXGI_ERROR_SDK_COMPONENT_MISSING)
-  {
-    RDCWARN("Debug layer not available: DXGI_ERROR_SDK_COMPONENT_MISSING");
-  }
-  else
-  {
-    RDCERR("Couldn't enable debug layer: %x", hr);
   }
 
   return false;
@@ -401,6 +417,10 @@ bool D3D12InitParams::IsSupportedVersion(uint64_t ver)
 
   // 0x10 -> 0x11 - Expanded PSO desc is serialised with amplification and mesh shader descs
   if(ver == 0x10)
+    return true;
+
+  // 0x11 -> 0x12 - Descriptor heaps serialise the original pointer to their descriptor array for GPU unwrapping
+  if(ver == 0x11)
     return true;
 
   return false;
@@ -1184,6 +1204,67 @@ D3D12_RASTERIZER_DESC2 Upconvert(const D3D12_RASTERIZER_DESC &desc)
   return RasterizerState;
 }
 
+D3D12_UNWRAPPED_STATE_OBJECT_DESC::D3D12_UNWRAPPED_STATE_OBJECT_DESC(
+    const D3D12_STATE_OBJECT_DESC &wrappedDesc)
+{
+  Type = wrappedDesc.Type;
+  NumSubobjects = wrappedDesc.NumSubobjects;
+
+  size_t numRoots = 0, numColls = 0, numAssocs = 0;
+
+  subobjects.resize(NumSubobjects);
+  for(size_t i = 0; i < subobjects.size(); i++)
+  {
+    subobjects[i] = wrappedDesc.pSubobjects[i];
+    if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE ||
+       subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE)
+    {
+      numRoots++;
+    }
+    else if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION)
+    {
+      numColls++;
+    }
+    else if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION)
+    {
+      numAssocs++;
+    }
+  }
+
+  unwrappedRootsigObjs.resize(numRoots);
+  collObjs.resize(numColls);
+  rebasedAssocs.reserve(numAssocs);
+
+  for(size_t i = 0, r = 0, c = 0; i < subobjects.size(); i++)
+  {
+    if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE ||
+       subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_LOCAL_ROOT_SIGNATURE)
+    {
+      D3D12_GLOBAL_ROOT_SIGNATURE *rootsig = (D3D12_GLOBAL_ROOT_SIGNATURE *)subobjects[i].pDesc;
+      unwrappedRootsigObjs[r].pGlobalRootSignature = Unwrap(rootsig->pGlobalRootSignature);
+      subobjects[i].pDesc = &unwrappedRootsigObjs[r++];
+    }
+    else if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_EXISTING_COLLECTION)
+    {
+      D3D12_EXISTING_COLLECTION_DESC *coll = (D3D12_EXISTING_COLLECTION_DESC *)subobjects[i].pDesc;
+      collObjs[c] = *coll;
+      collObjs[c].pExistingCollection = Unwrap(collObjs[c].pExistingCollection);
+    }
+    else if(subobjects[i].Type == D3D12_STATE_SUBOBJECT_TYPE_SUBOBJECT_TO_EXPORTS_ASSOCIATION)
+    {
+      D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION assoc =
+          *(D3D12_SUBOBJECT_TO_EXPORTS_ASSOCIATION *)subobjects[i].pDesc;
+
+      size_t idx = assoc.pSubobjectToAssociate - wrappedDesc.pSubobjects;
+      assoc.pSubobjectToAssociate = subobjects.data() + idx;
+      rebasedAssocs.push_back(assoc);
+      subobjects[i].pDesc = &rebasedAssocs.back();
+    }
+  }
+
+  pSubobjects = subobjects.data();
+}
+
 D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC::D3D12_EXPANDED_PIPELINE_STATE_STREAM_DESC(
     const D3D12_GRAPHICS_PIPELINE_STATE_DESC &graphics)
 {
@@ -1814,3 +1895,107 @@ D3D12_PACKED_PIPELINE_STATE_STREAM_DESC &D3D12_PACKED_PIPELINE_STATE_STREAM_DESC
 
   return *this;
 }
+
+#if ENABLED(ENABLE_UNIT_TESTS)
+#include "catch/catch.hpp"
+
+#define INCLUDE_GPUADDRESS_HELPERS
+
+#include "data/hlsl/hlsl_cbuffers.h"
+
+GPUAddress toaddr(uint64_t addr)
+{
+  GPUAddress ret;
+  RDCCOMPILE_ASSERT(sizeof(ret) == sizeof(addr), "GPU address isn't 64-bit");
+  memcpy(&ret, &addr, sizeof(ret));
+  return ret;
+}
+
+uint64_t fromaddr(GPUAddress addr)
+{
+  uint64_t ret;
+  RDCCOMPILE_ASSERT(sizeof(ret) == sizeof(addr), "GPU address isn't 64-bit");
+  memcpy(&ret, &addr, sizeof(ret));
+  return ret;
+}
+
+TEST_CASE("HLSL uint64 helpers", "[d3d]")
+{
+  rdcarray<uint64_t> testValues = {
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      100,
+      128,
+      1000,
+
+      0xfffffffa,
+      0xfffffffb,
+      0xfffffffc,
+      0xfffffffd,
+      0xfffffffe,
+      0xffffffff,
+
+      0x100000000ULL,
+      0x100000001ULL,
+      0x100000002ULL,
+      0x100000003ULL,
+      0x100000004ULL,
+      0x100000005ULL,
+      0x100000006ULL,
+
+      0x1000000000001000ULL,
+      0x100000000fffffffULL,
+      0x1000000010000000ULL,
+      0x1000000010000001ULL,
+      0x1000000010000002ULL,
+      0x1000000010000002ULL,
+
+      0x4000000000001000ULL,
+      0x400000000fffffffULL,
+      0x4000000010000000ULL,
+      0x4000000010000001ULL,
+      0x4000000010000002ULL,
+      0x4000000010000002ULL,
+      // don't test anything that could overflow if summed together for simplicity
+  };
+
+  for(uint64_t first : testValues)
+  {
+    for(uint64_t second : testValues)
+    {
+      GPUAddress a, b;
+      a = toaddr(first);
+      b = toaddr(second);
+
+      // sanity check
+      CHECK(fromaddr(a) == first);
+      CHECK(fromaddr(b) == second);
+
+      CHECK(lessThan(a, b) == (first < second));
+      CHECK(lessEqual(a, b) == (first <= second));
+
+      CHECK(lessThan(b, a) == (second < first));
+      CHECK(lessEqual(b, a) == (second <= first));
+
+      CHECK(fromaddr(add(a, b)) == (first + second));
+      CHECK(fromaddr(add(b, a)) == (first + second));
+
+      if(first >= second)
+        CHECK(fromaddr(sub(a, b)) == (first - second));
+      else
+        CHECK(fromaddr(sub(b, a)) == (second - first));
+    }
+  }
+};
+
+#endif    // ENABLED(ENABLE_UNIT_TESTS)
